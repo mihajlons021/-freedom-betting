@@ -5,7 +5,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 
-// ─── Theme ────────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 const T = {
   bg:        "#12141c",
   surface:   "#1c1f2e",
@@ -22,10 +22,14 @@ const T = {
   gold:      "#ffd166",
 };
 
-const AMOUNTS = [100, 500, 1000];
-const ESCROW  = "GynyDkXj8WVdP7XDL1nTekF7Azv7ebxA7RCMnY3a3tSu";
+const AMOUNTS      = [100, 500, 1000];
+const ESCROW       = "GynyDkXj8WVdP7XDL1nTekF7Azv7ebxA7RCMnY3a3tSu";
+const FREEDOM_MINT = "DGNPSiTrX5xnKcpVKBaXUsWBZbFuA2cJcb7fUJmoAJrd";
+const HELIUS_RPC   = "https://mainnet.helius-rpc.com/?api-key=45c09379-40fc-49f0-93a0-733d9d41d1a4";
+const PRIORITY_FEE = 500000;
+const API_KEY      = "DGN_FREEDOM_SECRET_2024_XKZP9";
 
-// ─── Phantom helpers (same as Asocijacije) ────────────────────────────────────
+// ─── Phantom helpers (same pattern as Battleship) ─────────────────────────────
 async function connectPhantom() {
   try {
     if (!window.solana?.isPhantom) {
@@ -34,21 +38,76 @@ async function connectPhantom() {
     }
     const resp = await window.solana.connect();
     return resp.publicKey.toString();
-  } catch {
-    return null;
+  } catch { return null; }
+}
+
+// Real SPL token transfer — dynamic ESM import (same as Battleship)
+async function sendDepositToEscrow(amount, walletAddress, setStatus) {
+  if (!walletAddress) { setStatus("Connect wallet first!"); return { ok: false }; }
+  try {
+    setStatus("Loading Solana...");
+    const { Connection, PublicKey, Transaction, ComputeBudgetProgram } =
+      await import("https://esm.sh/@solana/web3.js@1.91.1");
+    const { getMint, getAssociatedTokenAddress, createTransferCheckedInstruction } =
+      await import("https://esm.sh/@solana/spl-token@0.4.6");
+
+    setStatus("Connecting to network...");
+    const connection  = new Connection(HELIUS_RPC, "confirmed");
+    const fromPubkey  = new PublicKey(walletAddress);
+    const toPubkey    = new PublicKey(ESCROW);
+    const mintPubkey  = new PublicKey(FREEDOM_MINT);
+
+    setStatus("Getting token info...");
+    const mintInfo = await getMint(connection, mintPubkey);
+    const decimals = mintInfo.decimals;
+    const amountBN = BigInt(Math.floor(amount * Math.pow(10, decimals)));
+
+    const fromATA = await getAssociatedTokenAddress(mintPubkey, fromPubkey);
+    const toATA   = await getAssociatedTokenAddress(mintPubkey, toPubkey);
+
+    setStatus("Preparing transaction...");
+    const { blockhash } = await connection.getLatestBlockhash("finalized");
+    const tx = new Transaction();
+    tx.recentBlockhash = blockhash;
+    tx.feePayer = fromPubkey;
+    tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE }));
+    tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 200000 }));
+    tx.add(createTransferCheckedInstruction(fromATA, mintPubkey, toATA, fromPubkey, amountBN, decimals));
+
+    setStatus("Approve in Phantom...");
+    const { signature } = await window.solana.signAndSendTransaction(tx);
+
+    setStatus("Confirming on blockchain...");
+    let confirmed = false;
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      const status = await connection.getSignatureStatus(signature, { searchTransactionHistory: true });
+      const conf = status?.value?.confirmationStatus;
+      if (conf === "confirmed" || conf === "finalized") { confirmed = true; break; }
+      if (status?.value?.err) throw new Error("TX failed on chain");
+    }
+    if (!confirmed) throw new Error("Timeout — check Solana Explorer");
+
+    setStatus("Deposit confirmed! ✅");
+    return { ok: true, signature };
+  } catch (e) {
+    setStatus("Error: " + e.message);
+    return { ok: false, err: e.message };
   }
 }
 
-async function signWager(amount) {
+// Payout — calls server-side API (same pattern as Battleship)
+async function triggerPayout(betId, winnerWallet, amount) {
   try {
-    if (!window.solana?.isPhantom) return { ok: false, err: "No Phantom" };
-    await window.solana.signMessage(
-      new TextEncoder().encode("Freedom Bets wager " + amount),
-      "utf8"
-    );
-    return { ok: true, id: "SIG" + Date.now() };
+    const res = await fetch("/api/payout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": API_KEY },
+      body: JSON.stringify({ betId, winnerWallet, amount }),
+    });
+    const data = await res.json();
+    return data;
   } catch (e) {
-    return { ok: false, err: e.message };
+    return { success: false, error: e.message };
   }
 }
 
@@ -74,15 +133,65 @@ function Logo({ size = 32 }) {
   );
 }
 
-// ─── Wallet badge (mini) ───────────────────────────────────────────────────────
-function WalletBadge({ wallet }) {
-  if (!wallet) return null;
+// ─── Deposit Overlay — shown during SPL token transfer ────────────────────────
+function DepositOverlay({ amount, status, onAbort }) {
+  const isConfirmed = status?.includes("confirmed") || status?.includes("✅");
+  const isError     = status?.startsWith("Error");
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: "5px", background: "rgba(45,255,126,0.06)", border: `1px solid ${T.green}33`, borderRadius: "20px", padding: "3px 8px" }}>
-      <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.green, flexShrink: 0 }} />
-      <span style={{ fontSize: "0.6rem", color: T.green, fontWeight: 700, fontFamily: "monospace" }}>
-        {wallet.slice(0, 4)}...{wallet.slice(-4)}
-      </span>
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 1000,
+      background: "rgba(6,11,18,0.96)",
+      backdropFilter: "blur(12px)",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center",
+      padding: "24px", fontFamily: "'Outfit', sans-serif",
+    }}>
+      <Logo size={56} />
+      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: T.text, marginTop: "16px", marginBottom: "6px" }}>
+        Depositing to Escrow
+      </div>
+      <div style={{ fontSize: "0.75rem", color: T.muted, marginBottom: "24px" }}>
+        Sending <strong style={{ color: T.gold }}>{amount} $FREE</strong> to escrow
+      </div>
+
+      {/* Escrow address */}
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "8px", padding: "10px 14px", marginBottom: "20px", maxWidth: "340px", width: "100%" }}>
+        <div style={{ fontSize: "0.62rem", color: T.muted, marginBottom: "4px", letterSpacing: "0.1em" }}>ESCROW ADDRESS</div>
+        <div style={{ fontSize: "0.7rem", color: T.green, fontFamily: "monospace", wordBreak: "break-all" }}>{ESCROW}</div>
+      </div>
+
+      {/* Status */}
+      <div style={{
+        padding: "12px 20px", borderRadius: "8px", marginBottom: "20px",
+        background: isConfirmed ? "rgba(45,255,126,0.08)" : isError ? "rgba(255,77,106,0.08)" : "rgba(196,78,255,0.08)",
+        border: `1px solid ${isConfirmed ? T.green : isError ? T.red : T.purple}44`,
+        color: isConfirmed ? T.green : isError ? T.red : T.purple,
+        fontSize: "0.82rem", fontWeight: 600, textAlign: "center", maxWidth: "340px", width: "100%",
+        minHeight: "46px", display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {!isConfirmed && !isError && (
+          <span style={{ display: "inline-block", width: "14px", height: "14px", border: `2px solid ${T.purple}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite", marginRight: "8px", flexShrink: 0 }} />
+        )}
+        {status || "Initializing..."}
+      </div>
+
+      {/* Prize pool info */}
+      <div style={{ display: "flex", justifyContent: "space-between", maxWidth: "340px", width: "100%", marginBottom: "20px" }}>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "8px", padding: "10px 14px", flex: 1, marginRight: "8px", textAlign: "center" }}>
+          <div style={{ fontSize: "0.62rem", color: T.muted, marginBottom: "3px" }}>YOUR STAKE</div>
+          <div style={{ fontSize: "0.9rem", fontWeight: 800, color: T.gold }}>{amount} $FREE</div>
+        </div>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "8px", padding: "10px 14px", flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: "0.62rem", color: T.muted, marginBottom: "3px" }}>WIN UP TO</div>
+          <div style={{ fontSize: "0.9rem", fontWeight: 800, color: T.green }}>{(amount * 1.9).toLocaleString()} $FREE</div>
+        </div>
+      </div>
+
+      {!isConfirmed && (
+        <button onClick={onAbort} style={{ padding: "10px 24px", background: "transparent", border: `1px solid ${T.border}`, borderRadius: "8px", color: T.muted, fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}>
+          Cancel
+        </button>
+      )}
     </div>
   );
 }
@@ -147,7 +256,12 @@ function Header({ tab, setTab, liveBets, username, wallet, onLogout }) {
           <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: "5px", background: "rgba(45,255,126,0.06)", border: `1px solid ${T.green}33`, borderRadius: "20px", padding: "3px 8px", cursor: "pointer" }}>
             <span style={{ fontSize: "0.6rem", color: T.green, fontWeight: 700 }}>👤 {username}</span>
           </button>
-          {wallet && <WalletBadge wallet={wallet} />}
+          {wallet && (
+            <div style={{ display: "flex", alignItems: "center", gap: "5px", background: "rgba(45,255,126,0.06)", border: `1px solid ${T.green}33`, borderRadius: "20px", padding: "3px 8px" }}>
+              <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: T.green }} />
+              <span style={{ fontSize: "0.6rem", color: T.green, fontWeight: 700, fontFamily: "monospace" }}>{wallet.slice(0,4)}...{wallet.slice(-4)}</span>
+            </div>
+          )}
         </div>
       </div>
       <div style={{ display: "flex", padding: "0 12px" }}>
@@ -195,14 +309,16 @@ function SectionHeader({ title, count }) {
 
 // ─── Place Bet ────────────────────────────────────────────────────────────────
 function BetForm({ username, wallet, onConnectWallet }) {
-  const [desc, setDesc]           = useState("");
-  const [amount, setAmount]       = useState(500);
+  const [desc, setDesc]             = useState("");
+  const [amount, setAmount]         = useState(500);
   const [customMode, setCustomMode] = useState(false);
   const [customVal, setCustomVal]   = useState("");
-  const [side, setSide]           = useState("YES");
-  const [done, setDone]           = useState(false);
-  const [loading, setLoading]     = useState(false);
-  const [wloading, setWloading]   = useState(false);
+  const [side, setSide]             = useState("YES");
+  const [done, setDone]             = useState(false);
+  const [loading, setLoading]       = useState(false);
+  const [wloading, setWloading]     = useState(false);
+  const [depositStatus, setDepositStatus] = useState(null); // null = no overlay
+  const [depositMsg, setDepositMsg] = useState("");
 
   const effectiveAmount = customMode ? (parseInt(customVal) || 0) : amount;
   const amountValid     = effectiveAmount >= 1;
@@ -211,15 +327,21 @@ function BetForm({ username, wallet, onConnectWallet }) {
     if (!desc.trim() || !amountValid) return;
     if (!wallet) { alert("Connect Phantom Wallet first!"); return; }
 
-    setLoading(true);
-    // Sign wager — same as Asocijacije
-    const tx = await signWager(effectiveAmount);
-    if (!tx.ok) {
-      alert("Wallet signature failed: " + tx.err);
-      setLoading(false);
+    // Show deposit overlay
+    setDepositStatus("starting");
+    setDepositMsg("Initializing...");
+
+    const result = await sendDepositToEscrow(effectiveAmount, wallet, (msg) => {
+      setDepositMsg(msg);
+    });
+
+    if (!result.ok) {
+      // Keep overlay visible with error, then close after 3s
+      setTimeout(() => setDepositStatus(null), 3000);
       return;
     }
 
+    // Deposit confirmed — save bet to Firebase
     try {
       await addDoc(collection(db, "bets"), {
         desc:          desc.trim(),
@@ -227,8 +349,10 @@ function BetForm({ username, wallet, onConnectWallet }) {
         side:          side,
         creator:       username,
         creatorWallet: wallet,
+        creatorTx:     result.signature,
         opponent:      null,
         opponentWallet: null,
+        opponentTx:    null,
         status:        "open",
         claimedBy:     null,
         claimedSide:   null,
@@ -236,173 +360,164 @@ function BetForm({ username, wallet, onConnectWallet }) {
         proofNote:     null,
         winner:        null,
         escrow:        ESCROW,
-        creatorTx:     tx.id,
         createdAt:     serverTimestamp(),
       });
+      setDepositStatus(null);
       setDone(true);
       setDesc("");
       setCustomVal("");
       setCustomMode(false);
       setTimeout(() => setDone(false), 3000);
     } catch (e) {
-      console.error("Error:", e);
+      setDepositMsg("Error saving bet: " + e.message);
+      setTimeout(() => setDepositStatus(null), 3000);
     }
-    setLoading(false);
-  };
-
-  const handleConnectWallet = async () => {
-    setWloading(true);
-    await onConnectWallet();
-    setWloading(false);
   };
 
   return (
-    <div style={{ padding: "16px" }}>
-      <div style={{ marginBottom: "16px" }}>
-        <div style={{ fontSize: "1.1rem", fontWeight: 800, color: T.text }}>Place a Bet</div>
-        <div style={{ fontSize: "0.75rem", color: T.muted, marginTop: "2px" }}>
-          Betting as <span style={{ color: T.green, fontWeight: 700 }}>@{username}</span>
-        </div>
-      </div>
+    <>
+      {depositStatus && (
+        <DepositOverlay
+          amount={effectiveAmount}
+          status={depositMsg}
+          onAbort={() => setDepositStatus(null)}
+        />
+      )}
 
-      {/* Wallet connect card */}
-      <div style={{ background: T.card, border: `1px solid ${wallet ? T.green + "44" : T.border}`, borderRadius: "12px", padding: "12px 14px", marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-        <div>
-          <div style={{ fontSize: "0.68rem", color: T.muted, letterSpacing: "0.1em", marginBottom: "3px" }}>PHANTOM WALLET</div>
-          {wallet
-            ? <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: T.green, boxShadow: `0 0 6px ${T.green}` }} />
-                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.green, fontFamily: "monospace" }}>{wallet.slice(0,6)}...{wallet.slice(-4)}</span>
-                <span style={{ fontSize: "0.65rem", color: T.muted }}>✓ Connected</span>
+      <div style={{ padding: "16px" }}>
+        <div style={{ marginBottom: "16px" }}>
+          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: T.text }}>Place a Bet</div>
+          <div style={{ fontSize: "0.75rem", color: T.muted, marginTop: "2px" }}>
+            Betting as <span style={{ color: T.green, fontWeight: 700 }}>@{username}</span>
+          </div>
+        </div>
+
+        {/* Wallet card */}
+        <div style={{ background: T.card, border: `1px solid ${wallet ? T.green + "44" : T.border}`, borderRadius: "12px", padding: "12px 14px", marginBottom: "12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: "0.68rem", color: T.muted, letterSpacing: "0.1em", marginBottom: "3px" }}>PHANTOM WALLET</div>
+            {wallet
+              ? <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: T.green, boxShadow: `0 0 6px ${T.green}` }} />
+                  <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.green, fontFamily: "monospace" }}>{wallet.slice(0,6)}...{wallet.slice(-4)}</span>
+                  <span style={{ fontSize: "0.65rem", color: T.muted }}>✓ Connected</span>
+                </div>
+              : <div style={{ fontSize: "0.75rem", color: T.muted }}>Not connected</div>
+            }
+          </div>
+          {!wallet && (
+            <button onClick={async () => { setWloading(true); await onConnectWallet(); setWloading(false); }} disabled={wloading}
+              style={{ padding: "9px 14px", background: `linear-gradient(135deg,${T.purple},${T.purpleDim})`, border: "none", borderRadius: "8px", color: "white", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}>
+              {wloading ? "Connecting..." : "🔗 Connect"}
+            </button>
+          )}
+        </div>
+
+        {/* Description */}
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden", marginBottom: "12px" }}>
+          <div style={{ padding: "12px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: "8px" }}>
+            <span>📝</span>
+            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.text }}>Bet Description</span>
+          </div>
+          <div style={{ padding: "14px" }}>
+            <textarea value={desc} onChange={e => setDesc(e.target.value.slice(0, 200))}
+              placeholder='e.g. "Will Trump visit Berlin before end of 2025?"'
+              rows={3}
+              style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: "8px", color: T.text, fontSize: "0.88rem", padding: "11px 12px", resize: "none", outline: "none", boxSizing: "border-box", lineHeight: 1.6, fontFamily: "inherit", transition: "border-color 0.2s" }}
+              onFocus={e => { e.target.style.borderColor = T.green; }} onBlur={e => { e.target.style.borderColor = T.border; }}
+            />
+            <div style={{ marginTop: "8px", padding: "10px 12px", background: "rgba(255,209,102,0.06)", border: "1px solid rgba(255,209,102,0.2)", borderRadius: "8px", display: "flex", gap: "8px" }}>
+              <span style={{ flexShrink: 0 }}>⚠️</span>
+              <div style={{ fontSize: "0.75rem", color: "#c8a84a", lineHeight: 1.55 }}>
+                Bet must have a <strong>clear, verifiable YES/NO outcome.</strong> Ambiguous bets will be declared a <span style={{ color: T.red, fontWeight: 700 }}>DRAW</span> and tokens returned.
               </div>
-            : <div style={{ fontSize: "0.75rem", color: T.muted }}>Not connected</div>
-          }
-        </div>
-        {!wallet && (
-          <button onClick={handleConnectWallet} disabled={wloading} style={{ padding: "9px 14px", background: `linear-gradient(135deg,${T.purple},${T.purpleDim})`, border: "none", borderRadius: "8px", color: "white", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", boxShadow: `0 2px 10px ${T.purple}44` }}>
-            {wloading ? "Connecting..." : "🔗 Connect"}
-          </button>
-        )}
-      </div>
-
-      {/* Description */}
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden", marginBottom: "12px" }}>
-        <div style={{ padding: "12px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: "8px" }}>
-          <span>📝</span>
-          <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.text }}>Bet Description</span>
-        </div>
-        <div style={{ padding: "14px" }}>
-          <textarea
-            value={desc}
-            onChange={e => setDesc(e.target.value.slice(0, 200))}
-            placeholder='e.g. "Will Trump visit Berlin before end of 2025?"'
-            rows={3}
-            style={{ width: "100%", background: T.surface, border: `1px solid ${T.border}`, borderRadius: "8px", color: T.text, fontSize: "0.88rem", padding: "11px 12px", resize: "none", outline: "none", boxSizing: "border-box", lineHeight: 1.6, fontFamily: "inherit", transition: "border-color 0.2s" }}
-            onFocus={e => { e.target.style.borderColor = T.green; }}
-            onBlur={e => { e.target.style.borderColor = T.border; }}
-          />
-          <div style={{ marginTop: "8px", padding: "10px 12px", background: "rgba(255,209,102,0.06)", border: "1px solid rgba(255,209,102,0.2)", borderRadius: "8px", display: "flex", gap: "8px" }}>
-            <span style={{ flexShrink: 0 }}>⚠️</span>
-            <div style={{ fontSize: "0.75rem", color: "#c8a84a", lineHeight: 1.55 }}>
-              Bet must have a <strong>clear, verifiable YES/NO outcome.</strong> Ambiguous bets reaching arbitration will be declared a <span style={{ color: T.red, fontWeight: 700 }}>DRAW</span> and tokens returned.
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Stake */}
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden", marginBottom: "12px" }}>
-        <div style={{ padding: "12px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: "8px" }}>
-          <span>💎</span>
-          <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.text }}>Stake Amount</span>
+        {/* Stake */}
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden", marginBottom: "12px" }}>
+          <div style={{ padding: "12px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: "8px" }}>
+            <span>💎</span>
+            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.text }}>Stake Amount</span>
+          </div>
+          <div style={{ padding: "14px" }}>
+            <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+              {AMOUNTS.map(a => (
+                <button key={a} onClick={() => { setAmount(a); setCustomMode(false); setCustomVal(""); }} style={{ flex: 1, padding: "13px 0", background: !customMode && amount === a ? "rgba(45,255,126,0.1)" : T.surface, border: `2px solid ${!customMode && amount === a ? T.green : T.border}`, borderRadius: "10px", color: !customMode && amount === a ? T.green : T.muted, fontSize: "1.05rem", fontWeight: 800, cursor: "pointer", transition: "all 0.18s" }}>
+                  {a.toLocaleString()}
+                  <div style={{ fontSize: "0.58rem", fontWeight: 600, marginTop: "2px", opacity: 0.7 }}>$FREE</div>
+                </button>
+              ))}
+              <button onClick={() => { setCustomMode(true); setCustomVal(""); }} style={{ flex: 1, padding: "13px 0", background: customMode ? "rgba(196,78,255,0.1)" : T.surface, border: `2px solid ${customMode ? T.purple : T.border}`, borderRadius: "10px", color: customMode ? T.purple : T.muted, fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", transition: "all 0.18s" }}>
+                ✏️
+                <div style={{ fontSize: "0.58rem", fontWeight: 600, marginTop: "2px", opacity: 0.8 }}>Custom</div>
+              </button>
+            </div>
+            {customMode && (
+              <div style={{ position: "relative" }}>
+                <input type="number" value={customVal} onChange={e => setCustomVal(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="Enter amount..." min={1} autoFocus
+                  style={{ width: "100%", padding: "12px 60px 12px 14px", background: T.surface, border: `2px solid ${customVal && parseInt(customVal) >= 1 ? T.purple : T.border}`, borderRadius: "10px", color: T.text, fontSize: "1.05rem", fontWeight: 700, outline: "none", boxSizing: "border-box", fontFamily: "inherit" }}
+                  onFocus={e => { e.target.style.borderColor = T.purple; }} onBlur={e => { e.target.style.borderColor = customVal && parseInt(customVal) >= 1 ? T.purple : T.border; }}
+                />
+                <span style={{ position: "absolute", right: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "0.72rem", fontWeight: 700, color: T.purple }}>$FREE</span>
+              </div>
+            )}
+          </div>
         </div>
-        <div style={{ padding: "14px" }}>
-          <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-            {AMOUNTS.map(a => (
-              <button key={a} onClick={() => { setAmount(a); setCustomMode(false); setCustomVal(""); }} style={{ flex: 1, padding: "13px 0", background: !customMode && amount === a ? "rgba(45,255,126,0.1)" : T.surface, border: `2px solid ${!customMode && amount === a ? T.green : T.border}`, borderRadius: "10px", color: !customMode && amount === a ? T.green : T.muted, fontSize: "1.05rem", fontWeight: 800, cursor: "pointer", transition: "all 0.18s" }}>
-                {a.toLocaleString()}
-                <div style={{ fontSize: "0.58rem", fontWeight: 600, marginTop: "2px", opacity: 0.7 }}>$FREE</div>
+
+        {/* Side */}
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden", marginBottom: "12px" }}>
+          <div style={{ padding: "12px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: "8px" }}>
+            <span>⚔️</span>
+            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.text }}>Your Prediction</span>
+          </div>
+          <div style={{ padding: "14px", display: "flex", gap: "10px" }}>
+            {[
+              { v: "YES", label: "YES", sub: "I think it will happen",  color: T.green, bg: "rgba(45,255,126,0.08)", icon: "✅" },
+              { v: "NO",  label: "NO",  sub: "I think it won't happen", color: T.red,   bg: "rgba(255,77,106,0.08)", icon: "❌" },
+            ].map(s => (
+              <button key={s.v} onClick={() => setSide(s.v)} style={{ flex: 1, padding: "14px 10px", background: side === s.v ? s.bg : T.surface, border: `2px solid ${side === s.v ? s.color : T.border}`, borderRadius: "10px", textAlign: "left", cursor: "pointer", transition: "all 0.18s" }}>
+                <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>{s.icon}</div>
+                <div style={{ fontSize: "1rem", fontWeight: 800, color: side === s.v ? s.color : T.muted }}>{s.label}</div>
+                <div style={{ fontSize: "0.65rem", color: T.muted, marginTop: "2px" }}>{s.sub}</div>
               </button>
             ))}
-            <button onClick={() => { setCustomMode(true); setCustomVal(""); }} style={{ flex: 1, padding: "13px 0", background: customMode ? "rgba(196,78,255,0.1)" : T.surface, border: `2px solid ${customMode ? T.purple : T.border}`, borderRadius: "10px", color: customMode ? T.purple : T.muted, fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", transition: "all 0.18s" }}>
-              ✏️
-              <div style={{ fontSize: "0.58rem", fontWeight: 600, marginTop: "2px", opacity: 0.8 }}>Custom</div>
-            </button>
           </div>
-          {customMode && (
-            <div style={{ position: "relative" }}>
-              <input
-                type="number"
-                value={customVal}
-                onChange={e => setCustomVal(e.target.value.replace(/[^0-9]/g, ""))}
-                placeholder="Enter amount..."
-                min={1}
-                autoFocus
-                style={{ width: "100%", padding: "12px 60px 12px 14px", background: T.surface, border: `2px solid ${customVal && parseInt(customVal) >= 1 ? T.purple : T.border}`, borderRadius: "10px", color: T.text, fontSize: "1.05rem", fontWeight: 700, outline: "none", boxSizing: "border-box", fontFamily: "inherit", transition: "border-color 0.2s" }}
-                onFocus={e => { e.target.style.borderColor = T.purple; }}
-                onBlur={e => { e.target.style.borderColor = customVal && parseInt(customVal) >= 1 ? T.purple : T.border; }}
-              />
-              <span style={{ position: "absolute", right: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "0.72rem", fontWeight: 700, color: T.purple }}>$FREE</span>
-            </div>
-          )}
-          {customMode && customVal && parseInt(customVal) < 1 && (
-            <div style={{ marginTop: "6px", fontSize: "0.72rem", color: T.red, fontWeight: 600 }}>❌ Minimum amount is 1 $FREE</div>
-          )}
         </div>
-      </div>
 
-      {/* Side */}
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden", marginBottom: "12px" }}>
-        <div style={{ padding: "12px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", gap: "8px" }}>
-          <span>⚔️</span>
-          <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.text }}>Your Prediction</span>
-        </div>
-        <div style={{ padding: "14px", display: "flex", gap: "10px" }}>
+        {/* Summary */}
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+          <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Bet Summary</div>
           {[
-            { v: "YES", label: "YES", sub: "I think it will happen",  color: T.green, bg: "rgba(45,255,126,0.08)", icon: "✅" },
-            { v: "NO",  label: "NO",  sub: "I think it won't happen", color: T.red,   bg: "rgba(255,77,106,0.08)", icon: "❌" },
-          ].map(s => (
-            <button key={s.v} onClick={() => setSide(s.v)} style={{ flex: 1, padding: "14px 10px", background: side === s.v ? s.bg : T.surface, border: `2px solid ${side === s.v ? s.color : T.border}`, borderRadius: "10px", textAlign: "left", cursor: "pointer", transition: "all 0.18s" }}>
-              <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>{s.icon}</div>
-              <div style={{ fontSize: "1rem", fontWeight: 800, color: side === s.v ? s.color : T.muted }}>{s.label}</div>
-              <div style={{ fontSize: "0.65rem", color: T.muted, marginTop: "2px" }}>{s.sub}</div>
-            </button>
+            ["Your stake",       `${effectiveAmount.toLocaleString()} $FREE`,        T.text  ],
+            ["Potential return", `${(effectiveAmount*1.9).toLocaleString()} $FREE`,  T.green ],
+            ["Platform fee",     "5%",                                                T.muted ],
+            ["Escrow",           `${ESCROW.slice(0,8)}...${ESCROW.slice(-6)}`,       T.muted ],
+          ].map(([k, v, c]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>
+              <span style={{ fontSize: "0.78rem", color: T.muted }}>{k}</span>
+              <span style={{ fontSize: "0.78rem", fontWeight: 700, color: c }}>{v}</span>
+            </div>
           ))}
         </div>
-      </div>
 
-      {/* Summary */}
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
-        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Bet Summary</div>
-        {[
-          ["Your stake",       `${effectiveAmount.toLocaleString()} $FREE`,        T.text  ],
-          ["Potential return", `${(effectiveAmount*1.9).toLocaleString()} $FREE`,  T.green ],
-          ["Platform fee",     "5%",                                                T.muted ],
-          ["Net profit",       `+${(effectiveAmount*0.9).toLocaleString()} $FREE`, T.green ],
-          ["Escrow",           ESCROW.slice(0,8) + "..." + ESCROW.slice(-6),       T.muted ],
-        ].map(([k, v, c]) => (
-          <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>
-            <span style={{ fontSize: "0.78rem", color: T.muted }}>{k}</span>
-            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: c }}>{v}</span>
-          </div>
-        ))}
+        <button onClick={handleSubmit} disabled={loading || !desc.trim() || !amountValid || !wallet} style={{
+          width: "100%", padding: "16px",
+          background: done ? T.greenDim : (!desc.trim() || !amountValid || !wallet) ? T.dim : `linear-gradient(135deg,${T.purple},${T.purpleDim})`,
+          border: "none", borderRadius: "12px", color: "white",
+          fontSize: "1rem", fontWeight: 800,
+          cursor: (desc.trim() && amountValid && wallet) ? "pointer" : "not-allowed",
+          transition: "all 0.3s",
+        }}>
+          {done ? "✅  Bet Placed & Deposited!" : !wallet ? "🔗 Connect Wallet First" : `Lock ${effectiveAmount.toLocaleString()} $FREE → Escrow`}
+        </button>
+        <div style={{ textAlign: "center", marginTop: "8px", fontSize: "0.68rem", color: T.dim }}>
+          🔐 Real SPL token transfer · Phantom · Solana Mainnet
+        </div>
       </div>
-
-      <button onClick={handleSubmit} disabled={loading || !desc.trim() || !amountValid || !wallet} style={{
-        width: "100%", padding: "16px",
-        background: done ? T.greenDim : (!desc.trim() || !amountValid || !wallet) ? T.dim : `linear-gradient(135deg,${T.purple},${T.purpleDim})`,
-        border: "none", borderRadius: "12px",
-        color: "white", fontSize: "1rem", fontWeight: 800,
-        cursor: (desc.trim() && amountValid && wallet) ? "pointer" : "not-allowed",
-        transition: "all 0.3s",
-        boxShadow: done ? `0 4px 20px ${T.green}44` : `0 4px 20px ${T.purple}44`,
-      }}>
-        {done ? "✅  Bet Placed & Signed!" : loading ? "Signing with Phantom..." : !wallet ? "🔗 Connect Wallet First" : `Lock ${effectiveAmount.toLocaleString()} $FREE · Predict ${side}`}
-      </button>
-      <div style={{ textAlign: "center", marginTop: "8px", fontSize: "0.68rem", color: T.dim }}>
-        🔐 Signed via Phantom Wallet · Solana blockchain · Escrow: {ESCROW.slice(0,8)}...
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -434,7 +549,6 @@ function BetCard({ bet, onClaim, onAccept }) {
           ))}
         </div>
 
-        {/* OPEN — Accept with sides */}
         {bet.status === "open" && onAccept && (
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
@@ -455,13 +569,13 @@ function BetCard({ bet, onClaim, onAccept }) {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <div style={{ padding: "10px 12px", background: `${oppSideColor}0d`, border: `1px solid ${oppSideColor}44`, borderRadius: "8px", fontSize: "0.78rem", color: T.text, textAlign: "center", lineHeight: 1.5 }}>
-                  ⚠️ Confirm: you are betting <strong style={{ color: oppSideColor }}>{oppSide}</strong> with <strong style={{ color: T.gold }}>{(bet.amount||0).toLocaleString()} $FREE</strong>
-                  <br /><span style={{ fontSize: "0.68rem", color: T.muted }}>Phantom will ask you to sign the wager</span>
+                  ⚠️ Confirm: bet <strong style={{ color: oppSideColor }}>{oppSide}</strong> with <strong style={{ color: T.gold }}>{(bet.amount||0).toLocaleString()} $FREE</strong>
+                  <br /><span style={{ fontSize: "0.68rem", color: T.muted }}>Phantom will ask you to send tokens to escrow</span>
                 </div>
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button onClick={() => setConfirming(false)} style={{ flex: 1, padding: "10px", background: "transparent", border: `1px solid ${T.border}`, borderRadius: "8px", color: T.muted, fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
                   <button onClick={() => { onAccept(bet); setConfirming(false); }} style={{ flex: 2, padding: "10px", background: `linear-gradient(135deg,${T.green},${T.greenDim})`, border: "none", borderRadius: "8px", color: "#0a1a0a", fontSize: "0.85rem", fontWeight: 800, cursor: "pointer" }}>
-                    ✅ Confirm — Bet {oppSide}
+                    ✅ Confirm — Send {(bet.amount||0).toLocaleString()} $FREE
                   </button>
                 </div>
               </div>
@@ -469,14 +583,12 @@ function BetCard({ bet, onClaim, onAccept }) {
           </div>
         )}
 
-        {/* ACTIVE — Claim */}
         {bet.status === "active" && onClaim && (
           <button onClick={() => onClaim(bet)} style={{ width: "100%", padding: "11px", background: `linear-gradient(135deg,${T.purple},${T.purpleDim})`, border: "none", borderRadius: "8px", color: "white", fontSize: "0.85rem", fontWeight: 800, cursor: "pointer" }}>
             🏆 Claim Victory
           </button>
         )}
 
-        {/* PENDING */}
         {bet.status === "pending_claim" && bet.claimedBy && (
           <div style={{ padding: "9px 12px", background: `rgba(196,78,255,0.08)`, border: `1px solid ${T.purple}44`, borderRadius: "8px" }}>
             <span style={{ fontSize: "0.73rem", color: T.purple, fontWeight: 600 }}>
@@ -491,26 +603,41 @@ function BetCard({ bet, onClaim, onAccept }) {
 
 // ─── Live Bets ────────────────────────────────────────────────────────────────
 function LiveBets({ bets, username, wallet, onConnectWallet }) {
-  const [claimBet, setClaimBet]   = useState(null);
-  const [proofUrl, setProofUrl]   = useState("");
-  const [proofNote, setProofNote] = useState("");
-  const [claimSide, setClaimSide] = useState("YES");
-  const [sent, setSent]           = useState(false);
+  const [claimBet, setClaimBet]       = useState(null);
+  const [proofUrl, setProofUrl]       = useState("");
+  const [proofNote, setProofNote]     = useState("");
+  const [claimSide, setClaimSide]     = useState("YES");
+  const [sent, setSent]               = useState(false);
+  const [depositStatus, setDepositStatus] = useState(null);
+  const [depositMsg, setDepositMsg]   = useState("");
+  const [depositBet, setDepositBet]   = useState(null);
 
   const open   = bets.filter(b => b.status === "open");
   const active = bets.filter(b => ["active","pending_claim"].includes(b.status));
 
   const handleAccept = async (bet) => {
     if (!wallet) { alert("Connect Phantom Wallet first!"); return; }
-    // Sign wager before accepting
-    const tx = await signWager(bet.amount);
-    if (!tx.ok) { alert("Wallet signature failed: " + tx.err); return; }
+    setDepositBet(bet);
+    setDepositStatus("starting");
+    setDepositMsg("Initializing...");
+
+    const result = await sendDepositToEscrow(bet.amount, wallet, (msg) => {
+      setDepositMsg(msg);
+    });
+
+    if (!result.ok) {
+      setTimeout(() => { setDepositStatus(null); setDepositBet(null); }, 3000);
+      return;
+    }
+
     await updateDoc(doc(db, "bets", bet.id), {
       status:         "active",
       opponent:       username,
       opponentWallet: wallet,
-      opponentTx:     tx.id,
+      opponentTx:     result.signature,
     });
+    setDepositStatus(null);
+    setDepositBet(null);
   };
 
   const handleSubmitClaim = async () => {
@@ -528,81 +655,90 @@ function LiveBets({ bets, username, wallet, onConnectWallet }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ betDesc: claimBet.desc, claimedBy: username, claimedSide: claimSide, proofUrl, proofNote }),
       });
-    } catch (e) { console.error("Notification failed:", e); }
+    } catch {}
     setSent(true);
     setTimeout(() => { setSent(false); setClaimBet(null); setProofUrl(""); setProofNote(""); }, 2600);
   };
 
   return (
-    <div style={{ padding: "16px" }}>
-      {/* Wallet banner if not connected */}
-      {!wallet && (
-        <div style={{ background: `rgba(196,78,255,0.08)`, border: `1px solid ${T.purple}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: "0.78rem", color: T.muted }}>Connect Phantom to accept bets</div>
-          <button onClick={onConnectWallet} style={{ padding: "8px 14px", background: `linear-gradient(135deg,${T.purple},${T.purpleDim})`, border: "none", borderRadius: "8px", color: "white", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}>
-            🔗 Connect
-          </button>
-        </div>
+    <>
+      {depositStatus && depositBet && (
+        <DepositOverlay
+          amount={depositBet.amount}
+          status={depositMsg}
+          onAbort={() => { setDepositStatus(null); setDepositBet(null); }}
+        />
       )}
 
-      <div style={{ marginBottom: "20px" }}>
-        <SectionHeader title="Open — Waiting for Opponent" count={open.length} />
-        {open.length === 0
-          ? <div style={{ textAlign: "center", padding: "24px", background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", color: T.muted, fontSize: "0.82rem" }}>No open bets right now.</div>
-          : <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>{open.map(b => <BetCard key={b.id} bet={b} onAccept={handleAccept} />)}</div>
-        }
-      </div>
+      <div style={{ padding: "16px" }}>
+        {!wallet && (
+          <div style={{ background: `rgba(196,78,255,0.08)`, border: `1px solid ${T.purple}44`, borderRadius: "10px", padding: "12px 14px", marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: "0.78rem", color: T.muted }}>Connect Phantom to accept bets & send tokens to escrow</div>
+            <button onClick={onConnectWallet} style={{ padding: "8px 14px", background: `linear-gradient(135deg,${T.purple},${T.purpleDim})`, border: "none", borderRadius: "8px", color: "white", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}>
+              🔗 Connect
+            </button>
+          </div>
+        )}
 
-      <div style={{ marginBottom: "20px" }}>
-        <SectionHeader title="Active & Pending Claims" count={active.length} />
-        {active.length === 0
-          ? <div style={{ textAlign: "center", padding: "24px", background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", color: T.muted, fontSize: "0.82rem" }}>No active bets.</div>
-          : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-              {active.map(b => (
-                <div key={b.id}>
-                  <BetCard bet={b} onClaim={b.status === "active" ? (bet) => { setClaimBet(bet); setProofUrl(""); setProofNote(""); setSent(false); } : null} />
-                  {claimBet?.id === b.id && (
-                    <div style={{ background: T.card, border: `1px solid ${T.purple}55`, borderTop: `3px solid ${T.purple}`, borderRadius: "0 0 12px 12px", padding: "16px", marginTop: "-2px" }}>
-                      <div style={{ fontSize: "0.95rem", fontWeight: 800, color: T.text, marginBottom: "14px" }}>🏆 Claim Victory</div>
-                      <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>I Won On Side</div>
-                      <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
-                        {["YES","NO"].map(s => (
-                          <button key={s} onClick={() => setClaimSide(s)} style={{ flex: 1, padding: "11px", background: claimSide===s?(s==="YES"?"rgba(45,255,126,0.1)":"rgba(255,77,106,0.1)"):T.surface, border:`2px solid ${claimSide===s?(s==="YES"?T.green:T.red):T.border}`, borderRadius:"8px", color:claimSide===s?(s==="YES"?T.green:T.red):T.muted, fontSize:"0.95rem", fontWeight:800, cursor:"pointer" }}>
-                            {s==="YES"?"✅ YES":"❌ NO"}
+        <div style={{ marginBottom: "20px" }}>
+          <SectionHeader title="Open — Waiting for Opponent" count={open.length} />
+          {open.length === 0
+            ? <div style={{ textAlign: "center", padding: "24px", background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", color: T.muted, fontSize: "0.82rem" }}>No open bets right now.</div>
+            : <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>{open.map(b => <BetCard key={b.id} bet={b} onAccept={handleAccept} />)}</div>
+          }
+        </div>
+
+        <div style={{ marginBottom: "20px" }}>
+          <SectionHeader title="Active & Pending Claims" count={active.length} />
+          {active.length === 0
+            ? <div style={{ textAlign: "center", padding: "24px", background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", color: T.muted, fontSize: "0.82rem" }}>No active bets.</div>
+            : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {active.map(b => (
+                  <div key={b.id}>
+                    <BetCard bet={b} onClaim={b.status === "active" ? (bet) => { setClaimBet(bet); setProofUrl(""); setProofNote(""); setSent(false); } : null} />
+                    {claimBet?.id === b.id && (
+                      <div style={{ background: T.card, border: `1px solid ${T.purple}55`, borderTop: `3px solid ${T.purple}`, borderRadius: "0 0 12px 12px", padding: "16px", marginTop: "-2px" }}>
+                        <div style={{ fontSize: "0.95rem", fontWeight: 800, color: T.text, marginBottom: "14px" }}>🏆 Claim Victory</div>
+                        <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>I Won On Side</div>
+                        <div style={{ display: "flex", gap: "8px", marginBottom: "14px" }}>
+                          {["YES","NO"].map(s => (
+                            <button key={s} onClick={() => setClaimSide(s)} style={{ flex: 1, padding: "11px", background: claimSide===s?(s==="YES"?"rgba(45,255,126,0.1)":"rgba(255,77,106,0.1)"):T.surface, border:`2px solid ${claimSide===s?(s==="YES"?T.green:T.red):T.border}`, borderRadius:"8px", color:claimSide===s?(s==="YES"?T.green:T.red):T.muted, fontSize:"0.95rem", fontWeight:800, cursor:"pointer" }}>
+                              {s==="YES"?"✅ YES":"❌ NO"}
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{ fontSize:"0.72rem", fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:"6px" }}>Proof Link *</div>
+                        <input value={proofUrl} onChange={e=>setProofUrl(e.target.value)} placeholder="https://reuters.com/article-confirming-outcome"
+                          style={{ width:"100%", padding:"11px 12px", marginBottom:"10px", background:T.surface, border:`1px solid ${proofUrl?T.green:T.border}`, borderRadius:"8px", color:T.text, fontSize:"0.82rem", outline:"none", boxSizing:"border-box", fontFamily:"inherit" }}
+                          onFocus={e=>{e.target.style.borderColor=T.green;}} onBlur={e=>{e.target.style.borderColor=proofUrl?T.green:T.border;}}
+                        />
+                        <div style={{ fontSize:"0.72rem", fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:"6px" }}>Explanation (optional)</div>
+                        <textarea value={proofNote} onChange={e=>setProofNote(e.target.value.slice(0,300))} placeholder="Briefly explain what the link proves..." rows={2}
+                          style={{ width:"100%", padding:"11px 12px", marginBottom:"12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:"8px", color:T.text, fontSize:"0.82rem", outline:"none", resize:"none", boxSizing:"border-box", lineHeight:1.5, fontFamily:"inherit" }}
+                          onFocus={e=>{e.target.style.borderColor=T.green;}} onBlur={e=>{e.target.style.borderColor=T.border;}}
+                        />
+                        <div style={{ padding:"10px 12px", marginBottom:"14px", background:`rgba(45,255,126,0.04)`, border:`1px solid ${T.green}22`, borderLeft:`3px solid ${T.green}55`, borderRadius:"8px" }}>
+                          <div style={{ fontSize:"0.73rem", color:T.muted, lineHeight:1.65 }}>
+                            Claim reviewed by admin. Opponent has <strong style={{color:T.text}}>24h</strong> to counter. Admin resolves within <strong style={{color:T.text}}>48h</strong>. Ambiguous → <span style={{color:T.red,fontWeight:700}}>DRAW</span>.
+                          </div>
+                        </div>
+                        <div style={{ display:"flex", gap:"8px" }}>
+                          <button onClick={()=>setClaimBet(null)} style={{ padding:"11px 16px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:"8px", color:T.muted, fontSize:"0.8rem", fontWeight:700, cursor:"pointer" }}>Cancel</button>
+                          <button onClick={handleSubmitClaim} style={{ flex:1, padding:"11px", background:sent?T.greenDim:proofUrl?`linear-gradient(135deg,${T.purple},${T.purpleDim})`:T.dim, border:"none", borderRadius:"8px", color:"white", fontSize:"0.85rem", fontWeight:800, cursor:proofUrl?"pointer":"not-allowed", transition:"all 0.3s" }}>
+                            {sent?"✅ Submitted!":"Submit Claim →"}
                           </button>
-                        ))}
-                      </div>
-                      <div style={{ fontSize:"0.72rem", fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:"6px" }}>Proof Link *</div>
-                      <input value={proofUrl} onChange={e=>setProofUrl(e.target.value)} placeholder="https://reuters.com/article-confirming-outcome"
-                        style={{ width:"100%", padding:"11px 12px", marginBottom:"10px", background:T.surface, border:`1px solid ${proofUrl?T.green:T.border}`, borderRadius:"8px", color:T.text, fontSize:"0.82rem", outline:"none", boxSizing:"border-box", fontFamily:"inherit" }}
-                        onFocus={e=>{e.target.style.borderColor=T.green;}} onBlur={e=>{e.target.style.borderColor=proofUrl?T.green:T.border;}}
-                      />
-                      <div style={{ fontSize:"0.72rem", fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:"6px" }}>Explanation (optional)</div>
-                      <textarea value={proofNote} onChange={e=>setProofNote(e.target.value.slice(0,300))} placeholder="Briefly explain what the link proves..." rows={2}
-                        style={{ width:"100%", padding:"11px 12px", marginBottom:"12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:"8px", color:T.text, fontSize:"0.82rem", outline:"none", resize:"none", boxSizing:"border-box", lineHeight:1.5, fontFamily:"inherit" }}
-                        onFocus={e=>{e.target.style.borderColor=T.green;}} onBlur={e=>{e.target.style.borderColor=T.border;}}
-                      />
-                      <div style={{ padding:"10px 12px", marginBottom:"14px", background:`rgba(45,255,126,0.04)`, border:`1px solid ${T.green}22`, borderLeft:`3px solid ${T.green}55`, borderRadius:"8px" }}>
-                        <div style={{ fontSize:"0.73rem", color:T.muted, lineHeight:1.65 }}>
-                          Claim reviewed by admin. Opponent has <strong style={{color:T.text}}>24h</strong> to counter. Admin resolves within <strong style={{color:T.text}}>48h</strong>. Ambiguous claims → <span style={{color:T.red,fontWeight:700}}>DRAW</span>.
                         </div>
                       </div>
-                      <div style={{ display:"flex", gap:"8px" }}>
-                        <button onClick={()=>setClaimBet(null)} style={{ padding:"11px 16px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:"8px", color:T.muted, fontSize:"0.8rem", fontWeight:700, cursor:"pointer" }}>Cancel</button>
-                        <button onClick={handleSubmitClaim} style={{ flex:1, padding:"11px", background:sent?T.greenDim:proofUrl?`linear-gradient(135deg,${T.purple},${T.purpleDim})`:T.dim, border:"none", borderRadius:"8px", color:"white", fontSize:"0.85rem", fontWeight:800, cursor:proofUrl?"pointer":"not-allowed", transition:"all 0.3s" }}>
-                          {sent?"✅ Submitted!":"Submit Claim →"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )
-        }
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          }
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -634,7 +770,7 @@ function Leaderboard({ bets }) {
         ))}
       </div>
       {data.length===0?(
-        <div style={{textAlign:"center",padding:"32px",background:T.card,border:`1px solid ${T.border}`,borderRadius:"12px",color:T.muted}}>No resolved bets yet — be the first to win!</div>
+        <div style={{textAlign:"center",padding:"32px",background:T.card,border:`1px solid ${T.border}`,borderRadius:"12px",color:T.muted}}>No resolved bets yet!</div>
       ):(
         <>
           <div style={{display:"flex",gap:"8px",marginBottom:"12px",alignItems:"flex-end"}}>
@@ -656,7 +792,7 @@ function Leaderboard({ bets }) {
                 <div style={{fontSize:"1.3rem"}}>{avatars[i]||"🎯"}</div>
                 <div style={{flex:1}}>
                   <div style={{fontSize:"0.88rem",fontWeight:700,color:i===0?T.gold:T.text}}>@{e.name}</div>
-                  {tab==="streak"&&<div style={{fontSize:"0.65rem",color:T.muted}}>{e.tokens.toLocaleString()} tokens won total</div>}
+                  {tab==="streak"&&<div style={{fontSize:"0.65rem",color:T.muted}}>{e.tokens.toLocaleString()} tokens won</div>}
                 </div>
                 <div style={{textAlign:"right"}}>
                   {tab==="streak"?<><div style={{fontSize:"1.2rem",fontWeight:800,color:T.red}}>🔥 {e.wins}</div><div style={{fontSize:"0.6rem",color:T.muted}}>WIN STREAK</div></>:<><div style={{fontSize:"0.9rem",fontWeight:800,color:T.gold}}>{e.tokens.toLocaleString()}</div><div style={{fontSize:"0.6rem",color:T.muted}}>$FREE WON</div></>}
@@ -684,19 +820,46 @@ function PlayerSide({ name, side, amount, walletAddr }) {
 }
 
 function AdminPanel({ bets }) {
-  const [pin,setPin]=useState("");
-  const [ok,setOk]=useState(false);
-  const [err,setErr]=useState(false);
-  const [verdict,setVerdict]=useState({});
-  const [confirmed,setConf]=useState({});
-  const pending=bets.filter(b=>b.status==="pending_claim");
-  const resolved=bets.filter(b=>["resolved","draw"].includes(b.status));
+  const [pin,setPin]           = useState("");
+  const [ok,setOk]             = useState(false);
+  const [err,setErr]           = useState(false);
+  const [verdict,setVerdict]   = useState({});
+  const [confirmed,setConf]    = useState({});
+  const [payoutMsg,setPayoutMsg] = useState({});
+
+  const pending  = bets.filter(b=>b.status==="pending_claim");
+  const resolved = bets.filter(b=>["resolved","draw"].includes(b.status));
 
   const unlock=()=>{if(pin==="1234"){setOk(true);setErr(false);}else{setErr(true);setPin("");}};
-  const handleResolve=async(bet)=>{
-    const v=verdict[bet.id];if(!v)return;
-    await updateDoc(doc(db,"bets",bet.id),{status:v==="DRAW"?"draw":"resolved",winner:v==="DRAW"?null:v});
+
+  const handleResolve = async (bet) => {
+    const v = verdict[bet.id]; if (!v) return;
+
+    // Update Firebase status
+    await updateDoc(doc(db,"bets",bet.id),{
+      status: v==="DRAW"?"draw":"resolved",
+      winner: v==="DRAW"?null:v,
+    });
     setConf(p=>({...p,[bet.id]:v}));
+
+    // Trigger payout if not a draw
+    if (v !== "DRAW") {
+      // Determine winner wallet
+      const winnerWallet = v === bet.side ? bet.creatorWallet : bet.opponentWallet;
+      if (!winnerWallet) {
+        setPayoutMsg(p=>({...p,[bet.id]:"⚠️ Winner wallet not found — pay manually"}));
+        return;
+      }
+      setPayoutMsg(p=>({...p,[bet.id]:"Processing payout..."}));
+      const result = await triggerPayout(bet.id, winnerWallet, bet.amount);
+      if (result.success) {
+        setPayoutMsg(p=>({...p,[bet.id]:`✅ PAID! ${(bet.amount*2*0.95).toFixed(0)} $FREE → TX: ${result.signature?.slice(0,8)}...`}));
+      } else {
+        setPayoutMsg(p=>({...p,[bet.id]:`❌ Payout error: ${result.error}`}));
+      }
+    } else {
+      setPayoutMsg(p=>({...p,[bet.id]:"🤝 Draw — tokens returned to both players manually"}));
+    }
   };
 
   if(!ok)return(
@@ -719,7 +882,7 @@ function AdminPanel({ bets }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
         <div>
           <div style={{fontSize:"1.1rem",fontWeight:800,color:T.text}}>Claim Review</div>
-          <div style={{fontSize:"0.73rem",color:T.muted,marginTop:"2px"}}>Review claims and declare results</div>
+          <div style={{fontSize:"0.73rem",color:T.muted,marginTop:"2px"}}>Review claims · Payout auto-triggers on resolve</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:"6px",background:"rgba(45,255,126,0.08)",border:`1px solid ${T.green}33`,borderRadius:"20px",padding:"5px 10px"}}>
           <span style={{width:"6px",height:"6px",borderRadius:"50%",background:T.green,animation:"pulse 1.5s infinite",flexShrink:0}}/>
@@ -737,7 +900,7 @@ function AdminPanel({ bets }) {
         {pending.map(bet=>{
           const isDone=!!confirmed[bet.id];
           return(
-            <div key={bet.id} style={{background:T.card,border:`1px solid ${isDone?T.border:T.purple+"55"}`,borderTop:`3px solid ${isDone?T.border:T.purple}`,borderRadius:"12px",overflow:"hidden",opacity:isDone?0.5:1,transition:"opacity 0.4s"}}>
+            <div key={bet.id} style={{background:T.card,border:`1px solid ${isDone?T.border:T.purple+"55"}`,borderTop:`3px solid ${isDone?T.border:T.purple}`,borderRadius:"12px",overflow:"hidden",opacity:isDone?0.6:1,transition:"opacity 0.4s"}}>
               <div style={{padding:"14px"}}>
                 <div style={{fontSize:"0.9rem",fontWeight:600,color:T.text,lineHeight:1.5,marginBottom:"12px"}}>{bet.desc}</div>
                 <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"12px"}}>
@@ -745,6 +908,7 @@ function AdminPanel({ bets }) {
                   <div style={{fontSize:"0.75rem",fontWeight:800,color:T.dim}}>VS</div>
                   <PlayerSide name={bet.opponent||"???"} side={bet.side==="YES"?"NO":"YES"} amount={bet.amount} walletAddr={bet.opponentWallet}/>
                 </div>
+
                 <div style={{background:T.surface,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T.purple}`,borderRadius:"8px",padding:"12px",marginBottom:"12px"}}>
                   <div style={{fontSize:"0.72rem",fontWeight:700,color:T.text,marginBottom:"8px"}}>
                     Claim by <span style={{color:T.purple}}>@{bet.claimedBy}</span> — claims <span style={{color:bet.claimedSide==="YES"?T.green:T.red,fontWeight:800}}>{bet.claimedSide}</span> wins
@@ -755,6 +919,7 @@ function AdminPanel({ bets }) {
                   </a>
                   {bet.proofNote&&<div style={{fontSize:"0.75rem",color:T.muted,fontStyle:"italic",lineHeight:1.5,padding:"8px 10px",background:T.card,borderRadius:"6px"}}>"{bet.proofNote}"</div>}
                 </div>
+
                 {!isDone?(
                   <>
                     <div style={{fontSize:"0.72rem",fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:"8px"}}>Your Verdict</div>
@@ -766,12 +931,19 @@ function AdminPanel({ bets }) {
                       ))}
                     </div>
                     <button onClick={()=>handleResolve(bet)} disabled={!verdict[bet.id]} style={{width:"100%",padding:"14px",background:verdict[bet.id]?`linear-gradient(135deg,${T.purple},${T.purpleDim})`:T.dim,border:"none",borderRadius:"10px",color:verdict[bet.id]?"white":T.muted,fontSize:"0.9rem",fontWeight:800,cursor:verdict[bet.id]?"pointer":"not-allowed",transition:"all 0.2s",boxShadow:verdict[bet.id]?`0 4px 16px ${T.purple}44`:"none"}}>
-                      {verdict[bet.id]?`⚡ Confirm — ${verdict[bet.id]==="DRAW"?"Declare Draw":`${verdict[bet.id]} Wins · Release Funds`}`:"Select a verdict first"}
+                      {verdict[bet.id]?`⚡ Confirm — ${verdict[bet.id]==="DRAW"?"Declare Draw":`${verdict[bet.id]} Wins · Auto Payout`}`:"Select a verdict first"}
                     </button>
                   </>
                 ):(
-                  <div style={{padding:"14px",textAlign:"center",background:confirmed[bet.id]==="DRAW"?"rgba(122,128,160,0.08)":confirmed[bet.id]==="YES"?"rgba(45,255,126,0.08)":"rgba(255,77,106,0.08)",border:`1px solid ${confirmed[bet.id]==="DRAW"?T.muted:confirmed[bet.id]==="YES"?T.green:T.red}44`,borderRadius:"10px",color:confirmed[bet.id]==="DRAW"?T.muted:confirmed[bet.id]==="YES"?T.green:T.red,fontSize:"0.88rem",fontWeight:700}}>
-                    {confirmed[bet.id]==="DRAW"?"🤝 Draw Declared — Tokens Returned":`✅ ${confirmed[bet.id]} Wins — Funds Released`}
+                  <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+                    <div style={{padding:"12px",textAlign:"center",background:confirmed[bet.id]==="DRAW"?"rgba(122,128,160,0.08)":confirmed[bet.id]==="YES"?"rgba(45,255,126,0.08)":"rgba(255,77,106,0.08)",border:`1px solid ${confirmed[bet.id]==="DRAW"?T.muted:confirmed[bet.id]==="YES"?T.green:T.red}44`,borderRadius:"10px",color:confirmed[bet.id]==="DRAW"?T.muted:confirmed[bet.id]==="YES"?T.green:T.red,fontSize:"0.88rem",fontWeight:700}}>
+                      {confirmed[bet.id]==="DRAW"?"🤝 Draw Declared":`✅ ${confirmed[bet.id]} Wins`}
+                    </div>
+                    {payoutMsg[bet.id]&&(
+                      <div style={{padding:"10px 12px",background:`rgba(45,255,126,0.05)`,border:`1px solid ${T.green}22`,borderRadius:"8px",fontSize:"0.75rem",color:T.green,fontFamily:"monospace",wordBreak:"break-all",textAlign:"center"}}>
+                        {payoutMsg[bet.id]}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -802,98 +974,89 @@ function AdminPanel({ bets }) {
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 function Onboarding({ onEnter }) {
-  const [name, setName]   = useState("");
-  const [error, setError] = useState("");
-  const [wallet, setWallet] = useState(null);
-  const [wloading, setWloading] = useState(false);
+  const [name,setName]       = useState("");
+  const [error,setError]     = useState("");
+  const [wallet,setWallet]   = useState(null);
+  const [wloading,setWloading] = useState(false);
 
-  // Auto-detect Phantom on load
-  useEffect(() => {
-    try {
-      if (window.solana?.isPhantom && window.solana.publicKey)
-        setWallet(window.solana.publicKey.toString());
-    } catch {}
-  }, []);
+  useEffect(()=>{
+    try{if(window.solana?.isPhantom&&window.solana.publicKey)setWallet(window.solana.publicKey.toString());}catch{}
+  },[]);
 
-  const handleConnect = async () => {
+  const handleConnect=async()=>{
     setWloading(true);
-    const addr = await connectPhantom();
-    if (addr) setWallet(addr);
+    const addr=await connectPhantom();
+    if(addr)setWallet(addr);
     setWloading(false);
   };
 
-  const handleEnter = () => {
-    const trimmed = name.trim();
-    if (!trimmed) { setError("Please enter a username."); return; }
-    if (trimmed.length < 3) { setError("Min 3 characters."); return; }
-    if (trimmed.length > 20) { setError("Max 20 characters."); return; }
-    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) { setError("Only letters, numbers and _ allowed."); return; }
-    localStorage.setItem("fb_username", trimmed);
-    if (wallet) localStorage.setItem("fb_wallet", wallet);
-    onEnter(trimmed, wallet);
+  const handleEnter=()=>{
+    const t=name.trim();
+    if(!t){setError("Please enter a username.");return;}
+    if(t.length<3){setError("Min 3 characters.");return;}
+    if(t.length>20){setError("Max 20 characters.");return;}
+    if(!/^[a-zA-Z0-9_]+$/.test(t)){setError("Only letters, numbers and _ allowed.");return;}
+    localStorage.setItem("fb_username",t);
+    if(wallet)localStorage.setItem("fb_wallet",wallet);
+    onEnter(t,wallet);
   };
 
-  return (
-    <div style={{ minHeight:"100vh", background:T.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:"24px", fontFamily:"'Outfit',sans-serif" }}>
-      <div style={{ width:"100%", maxWidth:"360px", textAlign:"center" }}>
-        <div style={{ display:"flex", justifyContent:"center", marginBottom:"20px" }}><Logo size={72}/></div>
-        <div style={{ fontSize:"2rem", fontWeight:900, color:T.text, letterSpacing:"-0.02em", lineHeight:1, marginBottom:"6px" }}>
+  return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px",fontFamily:"'Outfit',sans-serif"}}>
+      <div style={{width:"100%",maxWidth:"360px",textAlign:"center"}}>
+        <div style={{display:"flex",justifyContent:"center",marginBottom:"20px"}}><Logo size={72}/></div>
+        <div style={{fontSize:"2rem",fontWeight:900,color:T.text,letterSpacing:"-0.02em",lineHeight:1,marginBottom:"6px"}}>
           FREEDOM <span style={{color:T.purple}}>BETS</span>
         </div>
-        <div style={{ fontSize:"0.75rem", color:T.muted, letterSpacing:"0.08em", marginBottom:"28px" }}>DEGENSAFE.FUN · POWERED BY $FREE</div>
+        <div style={{fontSize:"0.75rem",color:T.muted,letterSpacing:"0.08em",marginBottom:"28px"}}>DEGENSAFE.FUN · POWERED BY $FREE</div>
 
-        {/* Phantom Wallet */}
-        <div style={{ background:T.card, border:`1px solid ${wallet?T.green+"55":T.border}`, borderRadius:"12px", padding:"14px", marginBottom:"14px" }}>
-          <div style={{ fontSize:"0.68rem", color:T.muted, letterSpacing:"0.12em", marginBottom:"8px" }}>PHANTOM WALLET</div>
+        {/* Wallet */}
+        <div style={{background:T.card,border:`1px solid ${wallet?T.green+"55":T.border}`,borderRadius:"12px",padding:"14px",marginBottom:"14px"}}>
+          <div style={{fontSize:"0.68rem",color:T.muted,letterSpacing:"0.12em",marginBottom:"8px"}}>PHANTOM WALLET</div>
           {wallet
-            ? <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:"8px" }}>
-                <span style={{ width:"8px", height:"8px", borderRadius:"50%", background:T.green, boxShadow:`0 0 8px ${T.green}` }}/>
-                <span style={{ fontSize:"0.82rem", fontWeight:700, color:T.green, fontFamily:"monospace" }}>{wallet.slice(0,6)}...{wallet.slice(-4)}</span>
-                <span style={{ fontSize:"0.68rem", color:T.muted }}>✓ Connected</span>
-              </div>
-            : <button onClick={handleConnect} disabled={wloading} style={{ width:"100%", padding:"11px 0", background:`linear-gradient(90deg,${T.purple},${T.purpleDim})`, border:"none", borderRadius:"9px", color:"white", fontFamily:"inherit", fontSize:"0.88rem", fontWeight:700, cursor:"pointer", letterSpacing:"0.03em" }}>
-                {wloading ? "Connecting..." : "🔗 Connect Phantom Wallet"}
-              </button>
+            ?<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"8px"}}>
+               <span style={{width:"8px",height:"8px",borderRadius:"50%",background:T.green,boxShadow:`0 0 8px ${T.green}`}}/>
+               <span style={{fontSize:"0.82rem",fontWeight:700,color:T.green,fontFamily:"monospace"}}>{wallet.slice(0,6)}...{wallet.slice(-4)}</span>
+               <span style={{fontSize:"0.68rem",color:T.muted}}>✓ Connected</span>
+             </div>
+            :<button onClick={handleConnect} disabled={wloading} style={{width:"100%",padding:"11px 0",background:`linear-gradient(90deg,${T.purple},${T.purpleDim})`,border:"none",borderRadius:"9px",color:"white",fontFamily:"inherit",fontSize:"0.88rem",fontWeight:700,cursor:"pointer"}}>
+               {wloading?"Connecting...":"🔗 Connect Phantom Wallet"}
+             </button>
           }
-          {!wallet && <div style={{ fontSize:"0.68rem", color:T.dim, marginTop:"6px" }}>Optional — you can connect later</div>}
+          {!wallet&&<div style={{fontSize:"0.68rem",color:T.dim,marginTop:"6px"}}>Optional — you can connect later</div>}
         </div>
 
         {/* Username */}
-        <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:"12px", padding:"16px", marginBottom:"14px" }}>
-          <div style={{ fontSize:"0.82rem", fontWeight:800, color:T.text, marginBottom:"5px" }}>Choose your username</div>
-          <div style={{ fontSize:"0.72rem", color:T.muted, marginBottom:"14px", lineHeight:1.5 }}>This is how other players will see you.</div>
-          <input
-            value={name}
-            onChange={e=>{setName(e.target.value);setError("");}}
-            onKeyDown={e=>e.key==="Enter"&&handleEnter()}
-            placeholder="e.g. DegenKing, CryptoFox..."
-            maxLength={20}
-            style={{ width:"100%", padding:"12px 14px", background:T.surface, border:`2px solid ${error?T.red:name.trim().length>=3?T.green:T.border}`, borderRadius:"9px", color:T.text, fontSize:"0.95rem", fontWeight:600, outline:"none", boxSizing:"border-box", fontFamily:"inherit", textAlign:"center", letterSpacing:"0.03em", transition:"border-color 0.2s" }}
+        <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:"12px",padding:"16px",marginBottom:"14px"}}>
+          <div style={{fontSize:"0.82rem",fontWeight:800,color:T.text,marginBottom:"5px"}}>Choose your username</div>
+          <div style={{fontSize:"0.72rem",color:T.muted,marginBottom:"14px",lineHeight:1.5}}>This is how other players will see you.</div>
+          <input value={name} onChange={e=>{setName(e.target.value);setError("");}} onKeyDown={e=>e.key==="Enter"&&handleEnter()} placeholder="e.g. DegenKing, CryptoFox..." maxLength={20}
+            style={{width:"100%",padding:"12px 14px",background:T.surface,border:`2px solid ${error?T.red:name.trim().length>=3?T.green:T.border}`,borderRadius:"9px",color:T.text,fontSize:"0.95rem",fontWeight:600,outline:"none",boxSizing:"border-box",fontFamily:"inherit",textAlign:"center",letterSpacing:"0.03em",transition:"border-color 0.2s"}}
           />
-          <div style={{ textAlign:"right", fontSize:"0.62rem", color:T.dim, marginTop:"4px" }}>{name.length}/20</div>
-          {error && <div style={{ marginTop:"8px", padding:"8px 12px", background:`rgba(255,77,106,0.08)`, border:`1px solid ${T.red}44`, borderRadius:"8px", fontSize:"0.75rem", color:T.red, fontWeight:600 }}>❌ {error}</div>}
+          <div style={{textAlign:"right",fontSize:"0.62rem",color:T.dim,marginTop:"4px"}}>{name.length}/20</div>
+          {error&&<div style={{marginTop:"8px",padding:"8px 12px",background:`rgba(255,77,106,0.08)`,border:`1px solid ${T.red}44`,borderRadius:"8px",fontSize:"0.75rem",color:T.red,fontWeight:600}}>❌ {error}</div>}
         </div>
 
         {/* How it works */}
-        <div style={{ background:T.surface, border:`1px solid ${T.border}`, borderRadius:"12px", padding:"14px", marginBottom:"20px", textAlign:"left" }}>
-          <div style={{ fontSize:"0.72rem", fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:"0.08em", marginBottom:"10px" }}>📋 How it works</div>
+        <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:"12px",padding:"14px",marginBottom:"20px",textAlign:"left"}}>
+          <div style={{fontSize:"0.72rem",fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"10px"}}>📋 How it works</div>
           {[
-            ["⚔️","Create a bet on any YES/NO outcome"],
-            ["🤝","Another player accepts — opposite side"],
+            ["⚔️","Create a bet — tokens sent to escrow"],
+            ["🤝","Opponent accepts — also sends to escrow"],
             ["🏆","Winner submits proof — admin verifies"],
-            ["💰","Winner takes 95% · Escrow on Solana"],
+            ["💰","Auto-payout: winner gets 95% of pool"],
           ].map(([icon,text])=>(
-            <div key={text} style={{ display:"flex", gap:"10px", alignItems:"flex-start", marginBottom:"8px" }}>
+            <div key={text} style={{display:"flex",gap:"10px",alignItems:"flex-start",marginBottom:"8px"}}>
               <span style={{fontSize:"0.9rem",flexShrink:0}}>{icon}</span>
               <span style={{fontSize:"0.75rem",color:T.muted,lineHeight:1.5}}>{text}</span>
             </div>
           ))}
         </div>
 
-        <button onClick={handleEnter} disabled={name.trim().length<3} style={{ width:"100%", padding:"16px", background:name.trim().length>=3?`linear-gradient(135deg,${T.purple},${T.purpleDim})`:T.dim, border:"none", borderRadius:"12px", color:"white", fontSize:"1rem", fontWeight:800, letterSpacing:"0.02em", cursor:name.trim().length>=3?"pointer":"not-allowed", transition:"all 0.2s", boxShadow:name.trim().length>=3?`0 4px 20px ${T.purple}44`:"none" }}>
+        <button onClick={handleEnter} disabled={name.trim().length<3} style={{width:"100%",padding:"16px",background:name.trim().length>=3?`linear-gradient(135deg,${T.purple},${T.purpleDim})`:T.dim,border:"none",borderRadius:"12px",color:"white",fontSize:"1rem",fontWeight:800,letterSpacing:"0.02em",cursor:name.trim().length>=3?"pointer":"not-allowed",transition:"all 0.2s",boxShadow:name.trim().length>=3?`0 4px 20px ${T.purple}44`:"none"}}>
           Enter Arena →
         </button>
-        <div style={{ marginTop:"10px", fontSize:"0.65rem", color:T.dim }}>Saved locally · No signup required</div>
+        <div style={{marginTop:"10px",fontSize:"0.65rem",color:T.dim}}>Saved locally · No signup required</div>
       </div>
     </div>
   );
@@ -901,91 +1064,87 @@ function Onboarding({ onEnter }) {
 
 // ─── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab]         = useState("bet");
-  const [bets, setBets]       = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [tab, setTab]           = useState("bet");
+  const [bets, setBets]         = useState([]);
+  const [loading, setLoading]   = useState(true);
   const [username, setUsername] = useState(() => localStorage.getItem("fb_username") || "");
   const [wallet, setWallet]     = useState(() => localStorage.getItem("fb_wallet") || null);
 
-  // Auto-detect Phantom on load
-  useEffect(() => {
-    try {
-      if (window.solana?.isPhantom && window.solana.publicKey) {
-        const addr = window.solana.publicKey.toString();
+  useEffect(()=>{
+    try{
+      if(window.solana?.isPhantom&&window.solana.publicKey){
+        const addr=window.solana.publicKey.toString();
         setWallet(addr);
-        localStorage.setItem("fb_wallet", addr);
+        localStorage.setItem("fb_wallet",addr);
       }
-    } catch {}
-  }, []);
+    }catch{}
+  },[]);
 
-  useEffect(() => {
-    const q = query(collection(db, "bets"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, snap => {
-      setBets(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  useEffect(()=>{
+    const q=query(collection(db,"bets"),orderBy("createdAt","desc"));
+    const unsub=onSnapshot(q,snap=>{
+      setBets(snap.docs.map(d=>({id:d.id,...d.data()})));
       setLoading(false);
     });
-    return () => unsub();
-  }, []);
+    return()=>unsub();
+  },[]);
 
-  useEffect(() => {
-    const style = document.createElement("style");
-    style.textContent = `
+  useEffect(()=>{
+    const style=document.createElement("style");
+    style.textContent=`
       @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap');
-      *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-      body { background:${T.bg}; font-family:'Outfit',sans-serif; }
-      ::-webkit-scrollbar { width:4px; }
-      ::-webkit-scrollbar-track { background:${T.bg}; }
-      ::-webkit-scrollbar-thumb { background:${T.border}; border-radius:2px; }
-      @keyframes ticker { from{transform:translateX(0)} to{transform:translateX(-33.33%)} }
-      @keyframes pulse  { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.85)} }
+      *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+      body{background:${T.bg};font-family:'Outfit',sans-serif;}
+      ::-webkit-scrollbar{width:4px;}
+      ::-webkit-scrollbar-track{background:${T.bg};}
+      ::-webkit-scrollbar-thumb{background:${T.border};border-radius:2px;}
+      @keyframes ticker{from{transform:translateX(0)}to{transform:translateX(-33.33%)}}
+      @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(0.85)}}
+      @keyframes spin{to{transform:rotate(360deg)}}
     `;
     document.head.appendChild(style);
-    return () => document.head.removeChild(style);
-  }, []);
+    return()=>document.head.removeChild(style);
+  },[]);
 
-  const handleConnectWallet = async () => {
-    const addr = await connectPhantom();
-    if (addr) {
-      setWallet(addr);
-      localStorage.setItem("fb_wallet", addr);
-    }
+  const handleConnectWallet=async()=>{
+    const addr=await connectPhantom();
+    if(addr){setWallet(addr);localStorage.setItem("fb_wallet",addr);}
   };
 
-  const handleLogout = () => {
+  const handleLogout=()=>{
     localStorage.removeItem("fb_username");
     localStorage.removeItem("fb_wallet");
-    setUsername("");
-    setWallet(null);
+    setUsername("");setWallet(null);
   };
 
-  if (!username) {
-    return (
-      <Onboarding onEnter={(name, walletAddr) => {
+  if(!username){
+    return(
+      <Onboarding onEnter={(name,walletAddr)=>{
         setUsername(name);
-        if (walletAddr) setWallet(walletAddr);
-      }} />
+        if(walletAddr)setWallet(walletAddr);
+      }}/>
     );
   }
 
-  const liveBets = bets.filter(b => ["open","active","pending_claim"].includes(b.status)).length;
+  const liveBets=bets.filter(b=>["open","active","pending_claim"].includes(b.status)).length;
 
-  if (loading) return (
-    <div style={{ minHeight:"100vh", background:T.bg, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:"16px" }}>
-      <Logo size={60} />
-      <div style={{ color:T.muted, fontSize:"0.9rem", fontFamily:"sans-serif" }}>Loading Freedom Bets...</div>
+  if(loading)return(
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"16px"}}>
+      <Logo size={60}/>
+      <div style={{color:T.muted,fontSize:"0.9rem",fontFamily:"sans-serif"}}>Loading Freedom Bets...</div>
     </div>
   );
 
-  return (
-    <div style={{ minHeight:"100vh", background:T.bg, color:T.text, maxWidth:"430px", margin:"0 auto", fontFamily:"'Outfit',sans-serif" }}>
-      <Ticker />
-      <Header tab={tab} setTab={setTab} liveBets={liveBets} username={username} wallet={wallet} onLogout={handleLogout} />
-      <StatsBar bets={bets} />
-      <div style={{ paddingBottom:"24px" }}>
-        {tab==="bet"   && <BetForm username={username} wallet={wallet} onConnectWallet={handleConnectWallet} />}
-        {tab==="live"  && <LiveBets bets={bets} username={username} wallet={wallet} onConnectWallet={handleConnectWallet} />}
-        {tab==="board" && <Leaderboard bets={bets} />}
-        {tab==="admin" && <AdminPanel bets={bets} />}
+  return(
+    <div style={{minHeight:"100vh",background:T.bg,color:T.text,maxWidth:"430px",margin:"0 auto",fontFamily:"'Outfit',sans-serif"}}>
+      <Ticker/>
+      <Header tab={tab} setTab={setTab} liveBets={liveBets} username={username} wallet={wallet} onLogout={handleLogout}/>
+      <StatsBar bets={bets}/>
+      <div style={{paddingBottom:"24px"}}>
+        {tab==="bet"  &&<BetForm username={username} wallet={wallet} onConnectWallet={handleConnectWallet}/>}
+        {tab==="live" &&<LiveBets bets={bets} username={username} wallet={wallet} onConnectWallet={handleConnectWallet}/>}
+        {tab==="board"&&<Leaderboard bets={bets}/>}
+        {tab==="admin"&&<AdminPanel bets={bets}/>}
       </div>
     </div>
   );

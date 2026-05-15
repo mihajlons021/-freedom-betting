@@ -46,6 +46,131 @@ function Logo({ size = 32 }) {
   );
 }
 
+// ─── Onboarding / Username screen ─────────────────────────────────────────────
+function Onboarding({ onEnter }) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+
+  const handleEnter = () => {
+    const trimmed = name.trim();
+    if (!trimmed) { setError("Please enter a username."); return; }
+    if (trimmed.length < 3) { setError("Min 3 characters."); return; }
+    if (trimmed.length > 20) { setError("Max 20 characters."); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) { setError("Only letters, numbers and _ allowed."); return; }
+    localStorage.setItem("fb_username", trimmed);
+    onEnter(trimmed);
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: T.bg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "24px", fontFamily: "'Outfit', sans-serif",
+    }}>
+      <div style={{ width: "100%", maxWidth: "360px", textAlign: "center" }}>
+
+        {/* Logo */}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
+          <Logo size={72} />
+        </div>
+
+        {/* Title */}
+        <div style={{ fontSize: "2rem", fontWeight: 900, color: T.text, letterSpacing: "-0.02em", lineHeight: 1, marginBottom: "6px" }}>
+          FREEDOM <span style={{ color: T.purple }}>BETS</span>
+        </div>
+        <div style={{ fontSize: "0.75rem", color: T.muted, letterSpacing: "0.08em", marginBottom: "32px" }}>
+          DEGENSAFE.FUN · POWERED BY $FREE
+        </div>
+
+        {/* Card */}
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "16px", padding: "24px", marginBottom: "16px" }}>
+          <div style={{ fontSize: "1rem", fontWeight: 800, color: T.text, marginBottom: "6px" }}>
+            Choose your username
+          </div>
+          <div style={{ fontSize: "0.75rem", color: T.muted, marginBottom: "18px", lineHeight: 1.5 }}>
+            This is how other players will see you. Choose wisely — it's saved on your device.
+          </div>
+
+          <input
+            value={name}
+            onChange={e => { setName(e.target.value); setError(""); }}
+            onKeyDown={e => e.key === "Enter" && handleEnter()}
+            placeholder="e.g. DegenKing, CryptoFox..."
+            maxLength={20}
+            style={{
+              width: "100%", padding: "13px 14px",
+              background: T.surface,
+              border: `2px solid ${error ? T.red : name.trim().length >= 3 ? T.green : T.border}`,
+              borderRadius: "10px", color: T.text,
+              fontSize: "1rem", fontWeight: 600,
+              outline: "none", boxSizing: "border-box",
+              fontFamily: "inherit", textAlign: "center",
+              letterSpacing: "0.03em",
+              transition: "border-color 0.2s",
+            }}
+            onFocus={e => { if (!error) e.target.style.borderColor = T.green; }}
+            onBlur={e => { if (!error) e.target.style.borderColor = name.trim().length >= 3 ? T.green : T.border; }}
+          />
+
+          {/* Char counter */}
+          <div style={{ textAlign: "right", fontSize: "0.65rem", color: T.dim, marginTop: "4px" }}>
+            {name.length}/20
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div style={{ marginTop: "8px", padding: "8px 12px", background: "rgba(255,77,106,0.08)", border: `1px solid ${T.red}44`, borderRadius: "8px", fontSize: "0.75rem", color: T.red, fontWeight: 600 }}>
+              ❌ {error}
+            </div>
+          )}
+        </div>
+
+        {/* Rules */}
+        <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: "12px", padding: "14px", marginBottom: "20px", textAlign: "left" }}>
+          <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "10px" }}>
+            📋 How it works
+          </div>
+          {[
+            ["⚔️", "Create a bet on any YES/NO outcome"],
+            ["🤝", "Another player accepts and takes the opposite side"],
+            ["🏆", "Winner submits proof — admin verifies"],
+            ["💰", "Winner takes 95% of the pool"],
+          ].map(([icon, text]) => (
+            <div key={text} style={{ display: "flex", gap: "10px", alignItems: "flex-start", marginBottom: "8px" }}>
+              <span style={{ fontSize: "0.9rem", flexShrink: 0 }}>{icon}</span>
+              <span style={{ fontSize: "0.75rem", color: T.muted, lineHeight: 1.5 }}>{text}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Enter button */}
+        <button
+          onClick={handleEnter}
+          disabled={name.trim().length < 3}
+          style={{
+            width: "100%", padding: "16px",
+            background: name.trim().length >= 3
+              ? `linear-gradient(135deg,${T.purple},${T.purpleDim})`
+              : T.dim,
+            border: "none", borderRadius: "12px",
+            color: "white", fontSize: "1rem", fontWeight: 800,
+            letterSpacing: "0.02em",
+            cursor: name.trim().length >= 3 ? "pointer" : "not-allowed",
+            transition: "all 0.2s",
+            boxShadow: name.trim().length >= 3 ? `0 4px 20px ${T.purple}44` : "none",
+          }}
+        >
+          Enter Arena →
+        </button>
+
+        <div style={{ marginTop: "12px", fontSize: "0.65rem", color: T.dim }}>
+          Saved locally · No signup required
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Status Pill ──────────────────────────────────────────────────────────────
 function Pill({ status }) {
   const map = {
@@ -75,11 +200,7 @@ function Ticker() {
   const txt = "FREEDOM TOKEN • BET ON ANYTHING • WIN OR LOSE • CLAIM YOUR FREEDOM • DEGENS ONLY • ALL OR NOTHING • ";
   return (
     <div style={{ background: T.purple, padding: "5px 0", overflow: "hidden" }}>
-      <div style={{
-        display: "flex", whiteSpace: "nowrap",
-        animation: "ticker 22s linear infinite",
-        color: "white", fontSize: "0.72rem", fontWeight: 600,
-      }}>
+      <div style={{ display: "flex", whiteSpace: "nowrap", animation: "ticker 22s linear infinite", color: "white", fontSize: "0.72rem", fontWeight: 600 }}>
         {[0,1,2].map(i => <span key={i} style={{ flexShrink: 0, paddingRight: "40px" }}>{txt}</span>)}
       </div>
     </div>
@@ -87,7 +208,7 @@ function Ticker() {
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
-function Header({ tab, setTab, liveBets }) {
+function Header({ tab, setTab, liveBets, username, onLogout }) {
   const tabs = [
     { id: "bet",   icon: "＋", label: "New Bet"   },
     { id: "live",  icon: "🔴", label: "Live Bets" },
@@ -108,10 +229,21 @@ function Header({ tab, setTab, liveBets }) {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,77,106,0.1)", border: `1px solid ${T.red}44`, borderRadius: "20px", padding: "5px 10px" }}>
-          <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: T.red, animation: "pulse 1.5s infinite", flexShrink: 0 }} />
-          <span style={{ fontSize: "0.68rem", fontWeight: 700, color: T.red }}>LIVE</span>
-          <span style={{ fontSize: "0.68rem", color: T.muted, fontWeight: 600 }}>{liveBets} bets</span>
+
+        {/* Username badge */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,77,106,0.1)", border: `1px solid ${T.red}44`, borderRadius: "20px", padding: "4px 10px" }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.red, animation: "pulse 1.5s infinite", flexShrink: 0 }} />
+            <span style={{ fontSize: "0.65rem", fontWeight: 700, color: T.red }}>LIVE {liveBets}</span>
+          </div>
+          <button onClick={onLogout} style={{
+            display: "flex", alignItems: "center", gap: "5px",
+            background: "rgba(45,255,126,0.06)", border: `1px solid ${T.green}33`,
+            borderRadius: "20px", padding: "3px 8px",
+            cursor: "pointer",
+          }}>
+            <span style={{ fontSize: "0.6rem", color: T.green, fontWeight: 700 }}>👤 {username}</span>
+          </button>
         </div>
       </div>
       <div style={{ display: "flex", padding: "0 12px" }}>
@@ -184,7 +316,7 @@ function BetForm({ username }) {
         desc:        desc.trim(),
         amount:      amount,
         side:        side,
-        creator:     username || "Anonymous",
+        creator:     username,
         opponent:    null,
         status:      "open",
         claimedBy:   null,
@@ -198,7 +330,7 @@ function BetForm({ username }) {
       setDesc("");
       setTimeout(() => setDone(false), 3000);
     } catch (e) {
-      console.error("Error adding bet:", e);
+      console.error("Error:", e);
     }
     setLoading(false);
   };
@@ -207,7 +339,9 @@ function BetForm({ username }) {
     <div style={{ padding: "16px" }}>
       <div style={{ marginBottom: "16px" }}>
         <div style={{ fontSize: "1.1rem", fontWeight: 800, color: T.text }}>Place a Bet</div>
-        <div style={{ fontSize: "0.75rem", color: T.muted, marginTop: "2px" }}>Bet on any real-world outcome using $FREE tokens</div>
+        <div style={{ fontSize: "0.75rem", color: T.muted, marginTop: "2px" }}>
+          Betting as <span style={{ color: T.green, fontWeight: 700 }}>@{username}</span>
+        </div>
       </div>
 
       {/* Description */}
@@ -297,9 +431,9 @@ function BetForm({ username }) {
         <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Bet Summary</div>
         {[
           ["Your stake",       `${amount.toLocaleString()} $FREE`,        T.text  ],
-          ["Potential return", `${(amount * 1.9).toLocaleString()} $FREE`, T.green ],
+          ["Potential return", `${(amount*1.9).toLocaleString()} $FREE`,  T.green ],
           ["Platform fee",     "5%",                                        T.muted ],
-          ["Net profit",       `+${(amount * 0.9).toLocaleString()} $FREE`, T.green],
+          ["Net profit",       `+${(amount*0.9).toLocaleString()} $FREE`, T.green ],
         ].map(([k, v, c]) => (
           <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>
             <span style={{ fontSize: "0.78rem", color: T.muted }}>{k}</span>
@@ -317,7 +451,7 @@ function BetForm({ username }) {
         transition: "all 0.3s",
         boxShadow: done ? `0 4px 20px ${T.green}44` : `0 4px 20px ${T.purple}44`,
       }}>
-        {done ? "✅  Bet Saved!" : loading ? "Saving..." : `Lock ${amount.toLocaleString()} $FREE · Predict ${side}`}
+        {done ? "✅  Bet Placed!" : loading ? "Saving..." : `Lock ${amount.toLocaleString()} $FREE · Predict ${side}`}
       </button>
       <div style={{ textAlign: "center", marginTop: "8px", fontSize: "0.68rem", color: T.dim }}>
         🔐 Signed via Phantom Wallet · Solana blockchain
@@ -332,26 +466,21 @@ function BetCard({ bet, onClaim, onAccept }) {
   const sideColor    = bet.side === "YES" ? T.green : T.red;
   const oppSide      = bet.side === "YES" ? "NO" : "YES";
   const oppSideColor = bet.side === "YES" ? T.red : T.green;
-  const timeStr      = bet.createdAt?.toDate
-    ? bet.createdAt.toDate().toLocaleDateString()
-    : "just now";
+  const timeStr      = bet.createdAt?.toDate ? bet.createdAt.toDate().toLocaleDateString() : "just now";
 
   return (
     <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden" }}>
-      {/* Top color stripe */}
       <div style={{ height: "3px", background: bet.side === "YES" ? `linear-gradient(90deg,${T.green},${T.greenDim})` : `linear-gradient(90deg,${T.red},#cc2244)` }} />
       <div style={{ padding: "14px" }}>
-        {/* Question */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px", gap: "10px" }}>
           <div style={{ fontSize: "0.88rem", fontWeight: 600, color: T.text, lineHeight: 1.5, flex: 1 }}>{bet.desc}</div>
           <Pill status={bet.status} />
         </div>
 
-        {/* Meta tags */}
         <div style={{ display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
           {[
-            { icon: "👤", label: bet.creator },
-            { icon: "💰", label: `${(bet.amount || 0).toLocaleString()} $FREE`, color: T.gold },
+            { icon: "👤", label: `@${bet.creator}` },
+            { icon: "💰", label: `${(bet.amount||0).toLocaleString()} $FREE`, color: T.gold },
             { icon: "⏱",  label: timeStr },
           ].map((m, i) => (
             <span key={i} style={{ display: "flex", alignItems: "center", gap: "4px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: "6px", padding: "4px 8px", fontSize: "0.7rem", color: m.color || T.muted, fontWeight: 600 }}>
@@ -360,63 +489,33 @@ function BetCard({ bet, onClaim, onAccept }) {
           ))}
         </div>
 
-        {/* OPEN — Accept flow with sides clearly shown */}
+        {/* OPEN — Accept with sides */}
         {bet.status === "open" && onAccept && (
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {/* Sides display */}
             <div style={{ display: "flex", gap: "8px", alignItems: "stretch" }}>
-              {/* Creator side */}
               <div style={{ flex: 1, background: T.surface, border: `2px solid ${sideColor}44`, borderRadius: "10px", padding: "10px 8px", textAlign: "center" }}>
-                <div style={{ fontSize: "0.62rem", color: T.muted, marginBottom: "4px", fontWeight: 600 }}>
-                  {bet.creator} bets
-                </div>
-                <div style={{ fontSize: "1.3rem", fontWeight: 900, color: sideColor }}>
-                  {bet.side === "YES" ? "✅" : "❌"} {bet.side}
-                </div>
+                <div style={{ fontSize: "0.62rem", color: T.muted, marginBottom: "4px", fontWeight: 600 }}>@{bet.creator} bets</div>
+                <div style={{ fontSize: "1.3rem", fontWeight: 900, color: sideColor }}>{bet.side === "YES" ? "✅" : "❌"} {bet.side}</div>
               </div>
-
-              {/* VS */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: 900, color: T.dim, minWidth: "28px" }}>VS</div>
-
-              {/* Opponent side (you) */}
               <div style={{ flex: 1, background: `${oppSideColor}0d`, border: `2px solid ${oppSideColor}66`, borderRadius: "10px", padding: "10px 8px", textAlign: "center" }}>
-                <div style={{ fontSize: "0.62rem", color: T.muted, marginBottom: "4px", fontWeight: 600 }}>
-                  You bet
-                </div>
-                <div style={{ fontSize: "1.3rem", fontWeight: 900, color: oppSideColor }}>
-                  {oppSide === "YES" ? "✅" : "❌"} {oppSide}
-                </div>
+                <div style={{ fontSize: "0.62rem", color: T.muted, marginBottom: "4px", fontWeight: 600 }}>You bet</div>
+                <div style={{ fontSize: "1.3rem", fontWeight: 900, color: oppSideColor }}>{oppSide === "YES" ? "✅" : "❌"} {oppSide}</div>
               </div>
             </div>
 
-            {/* Confirm step */}
             {!confirming ? (
-              <button onClick={() => setConfirming(true)} style={{
-                width: "100%", padding: "11px",
-                background: T.surface,
-                border: `2px solid ${T.green}`,
-                borderRadius: "8px",
-                color: T.green, fontSize: "0.85rem", fontWeight: 800,
-                cursor: "pointer", transition: "all 0.18s",
-              }}>
+              <button onClick={() => setConfirming(true)} style={{ width: "100%", padding: "11px", background: T.surface, border: `2px solid ${T.green}`, borderRadius: "8px", color: T.green, fontSize: "0.85rem", fontWeight: 800, cursor: "pointer", transition: "all 0.18s" }}>
                 Accept — I bet {oppSide} →
               </button>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 <div style={{ padding: "10px 12px", background: `${oppSideColor}0d`, border: `1px solid ${oppSideColor}44`, borderRadius: "8px", fontSize: "0.78rem", color: T.text, textAlign: "center", lineHeight: 1.5 }}>
-                  ⚠️ Confirm: you are betting <strong style={{ color: oppSideColor }}>{oppSide}</strong> with <strong style={{ color: T.gold }}>{(bet.amount || 0).toLocaleString()} $FREE</strong>
+                  ⚠️ Confirm: you are betting <strong style={{ color: oppSideColor }}>{oppSide}</strong> with <strong style={{ color: T.gold }}>{(bet.amount||0).toLocaleString()} $FREE</strong>
                 </div>
                 <div style={{ display: "flex", gap: "8px" }}>
-                  <button onClick={() => setConfirming(false)} style={{ flex: 1, padding: "10px", background: "transparent", border: `1px solid ${T.border}`, borderRadius: "8px", color: T.muted, fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}>
-                    Cancel
-                  </button>
-                  <button onClick={() => { onAccept(bet); setConfirming(false); }} style={{
-                    flex: 2, padding: "10px",
-                    background: `linear-gradient(135deg,${T.green},${T.greenDim})`,
-                    border: "none", borderRadius: "8px",
-                    color: "#0a1a0a", fontSize: "0.85rem", fontWeight: 800,
-                    cursor: "pointer",
-                  }}>
+                  <button onClick={() => setConfirming(false)} style={{ flex: 1, padding: "10px", background: "transparent", border: `1px solid ${T.border}`, borderRadius: "8px", color: T.muted, fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+                  <button onClick={() => { onAccept(bet); setConfirming(false); }} style={{ flex: 2, padding: "10px", background: `linear-gradient(135deg,${T.green},${T.greenDim})`, border: "none", borderRadius: "8px", color: "#0a1a0a", fontSize: "0.85rem", fontWeight: 800, cursor: "pointer" }}>
                     ✅ Confirm — Bet {oppSide}
                   </button>
                 </div>
@@ -425,23 +524,18 @@ function BetCard({ bet, onClaim, onAccept }) {
           </div>
         )}
 
-        {/* ACTIVE — Claim Victory */}
+        {/* ACTIVE — Claim */}
         {bet.status === "active" && onClaim && (
-          <button onClick={() => onClaim(bet)} style={{
-            width: "100%", padding: "11px",
-            background: `linear-gradient(135deg,${T.purple},${T.purpleDim})`,
-            border: "none", borderRadius: "8px",
-            color: "white", fontSize: "0.85rem", fontWeight: 800, cursor: "pointer",
-          }}>
+          <button onClick={() => onClaim(bet)} style={{ width: "100%", padding: "11px", background: `linear-gradient(135deg,${T.purple},${T.purpleDim})`, border: "none", borderRadius: "8px", color: "white", fontSize: "0.85rem", fontWeight: 800, cursor: "pointer" }}>
             🏆 Claim Victory
           </button>
         )}
 
-        {/* PENDING CLAIM */}
+        {/* PENDING */}
         {bet.status === "pending_claim" && bet.claimedBy && (
           <div style={{ padding: "9px 12px", background: `rgba(196,78,255,0.08)`, border: `1px solid ${T.purple}44`, borderRadius: "8px" }}>
             <span style={{ fontSize: "0.73rem", color: T.purple, fontWeight: 600 }}>
-              ⏳ <strong>{bet.claimedBy}</strong> claimed {bet.claimedSide} win · Awaiting admin review
+              ⏳ <strong>@{bet.claimedBy}</strong> claimed {bet.claimedSide} win · Awaiting admin review
             </span>
           </div>
         )}
@@ -464,7 +558,7 @@ function LiveBets({ bets, username }) {
   const handleAccept = async (bet) => {
     await updateDoc(doc(db, "bets", bet.id), {
       status:   "active",
-      opponent: username || "Anonymous",
+      opponent: username,
     });
   };
 
@@ -472,19 +566,18 @@ function LiveBets({ bets, username }) {
     if (!proofUrl.trim() || !claimBet) return;
     await updateDoc(doc(db, "bets", claimBet.id), {
       status:      "pending_claim",
-      claimedBy:   username || "Anonymous",
+      claimedBy:   username,
       claimedSide: claimSide,
       proofUrl:    proofUrl,
       proofNote:   proofNote,
     });
-    // Telegram admin notification
     try {
       await fetch("/api/notify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           betDesc:     claimBet.desc,
-          claimedBy:   username || "Anonymous",
+          claimedBy:   username,
           claimedSide: claimSide,
           proofUrl:    proofUrl,
           proofNote:   proofNote,
@@ -494,18 +587,11 @@ function LiveBets({ bets, username }) {
       console.error("Notification failed:", e);
     }
     setSent(true);
-    setTimeout(() => {
-      setSent(false);
-      setClaimBet(null);
-      setProofUrl("");
-      setProofNote("");
-    }, 2600);
+    setTimeout(() => { setSent(false); setClaimBet(null); setProofUrl(""); setProofNote(""); }, 2600);
   };
 
   return (
     <div style={{ padding: "16px" }}>
-
-      {/* Open bets */}
       <div style={{ marginBottom: "20px" }}>
         <SectionHeader title="Open — Waiting for Opponent" count={open.length} />
         {open.length === 0
@@ -514,7 +600,6 @@ function LiveBets({ bets, username }) {
         }
       </div>
 
-      {/* Active + pending claims */}
       <div style={{ marginBottom: "20px" }}>
         <SectionHeader title="Active & Pending Claims" count={active.length} />
         {active.length === 0
@@ -523,22 +608,9 @@ function LiveBets({ bets, username }) {
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {active.map(b => (
                 <div key={b.id}>
-                  <BetCard
-                    bet={b}
-                    onClaim={b.status === "active"
-                      ? (bet) => { setClaimBet(bet); setProofUrl(""); setProofNote(""); setSent(false); }
-                      : null}
-                  />
-
-                  {/* Claim Victory drawer */}
+                  <BetCard bet={b} onClaim={b.status === "active" ? (bet) => { setClaimBet(bet); setProofUrl(""); setProofNote(""); setSent(false); } : null} />
                   {claimBet?.id === b.id && (
-                    <div style={{
-                      background: T.card,
-                      border: `1px solid ${T.purple}55`,
-                      borderTop: `3px solid ${T.purple}`,
-                      borderRadius: "0 0 12px 12px",
-                      padding: "16px", marginTop: "-2px",
-                    }}>
+                    <div style={{ background: T.card, border: `1px solid ${T.purple}55`, borderTop: `3px solid ${T.purple}`, borderRadius: "0 0 12px 12px", padding: "16px", marginTop: "-2px" }}>
                       <div style={{ fontSize: "0.95rem", fontWeight: 800, color: T.text, marginBottom: "14px" }}>🏆 Claim Victory</div>
 
                       <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>I Won On Side</div>
@@ -546,54 +618,37 @@ function LiveBets({ bets, username }) {
                         {["YES","NO"].map(s => (
                           <button key={s} onClick={() => setClaimSide(s)} style={{
                             flex: 1, padding: "11px",
-                            background: claimSide === s ? (s === "YES" ? "rgba(45,255,126,0.1)" : "rgba(255,77,106,0.1)") : T.surface,
-                            border: `2px solid ${claimSide === s ? (s === "YES" ? T.green : T.red) : T.border}`,
+                            background: claimSide === s ? (s==="YES"?"rgba(45,255,126,0.1)":"rgba(255,77,106,0.1)") : T.surface,
+                            border: `2px solid ${claimSide===s?(s==="YES"?T.green:T.red):T.border}`,
                             borderRadius: "8px",
-                            color: claimSide === s ? (s === "YES" ? T.green : T.red) : T.muted,
+                            color: claimSide===s?(s==="YES"?T.green:T.red):T.muted,
                             fontSize: "0.95rem", fontWeight: 800, cursor: "pointer",
-                          }}>
-                            {s === "YES" ? "✅ YES" : "❌ NO"}
-                          </button>
+                          }}>{s==="YES"?"✅ YES":"❌ NO"}</button>
                         ))}
                       </div>
 
                       <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>Proof Link *</div>
-                      <input
-                        value={proofUrl}
-                        onChange={e => setProofUrl(e.target.value)}
-                        placeholder="https://reuters.com/article-confirming-outcome"
-                        style={{ width: "100%", padding: "11px 12px", marginBottom: "10px", background: T.surface, border: `1px solid ${proofUrl ? T.green : T.border}`, borderRadius: "8px", color: T.text, fontSize: "0.82rem", outline: "none", boxSizing: "border-box", fontFamily: "inherit", transition: "border-color 0.2s" }}
-                        onFocus={e => { e.target.style.borderColor = T.green; }}
-                        onBlur={e => { e.target.style.borderColor = proofUrl ? T.green : T.border; }}
+                      <input value={proofUrl} onChange={e => setProofUrl(e.target.value)} placeholder="https://reuters.com/article-confirming-outcome"
+                        style={{ width:"100%", padding:"11px 12px", marginBottom:"10px", background:T.surface, border:`1px solid ${proofUrl?T.green:T.border}`, borderRadius:"8px", color:T.text, fontSize:"0.82rem", outline:"none", boxSizing:"border-box", fontFamily:"inherit", transition:"border-color 0.2s" }}
+                        onFocus={e=>{e.target.style.borderColor=T.green;}} onBlur={e=>{e.target.style.borderColor=proofUrl?T.green:T.border;}}
                       />
 
-                      <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>Explanation (optional)</div>
-                      <textarea
-                        value={proofNote}
-                        onChange={e => setProofNote(e.target.value.slice(0, 300))}
-                        placeholder="Briefly explain what the link proves..."
-                        rows={2}
-                        style={{ width: "100%", padding: "11px 12px", marginBottom: "12px", background: T.surface, border: `1px solid ${T.border}`, borderRadius: "8px", color: T.text, fontSize: "0.82rem", outline: "none", resize: "none", boxSizing: "border-box", lineHeight: 1.5, fontFamily: "inherit" }}
-                        onFocus={e => { e.target.style.borderColor = T.green; }}
-                        onBlur={e => { e.target.style.borderColor = T.border; }}
+                      <div style={{ fontSize:"0.72rem", fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:"6px" }}>Explanation (optional)</div>
+                      <textarea value={proofNote} onChange={e=>setProofNote(e.target.value.slice(0,300))} placeholder="Briefly explain what the link proves..." rows={2}
+                        style={{ width:"100%", padding:"11px 12px", marginBottom:"12px", background:T.surface, border:`1px solid ${T.border}`, borderRadius:"8px", color:T.text, fontSize:"0.82rem", outline:"none", resize:"none", boxSizing:"border-box", lineHeight:1.5, fontFamily:"inherit" }}
+                        onFocus={e=>{e.target.style.borderColor=T.green;}} onBlur={e=>{e.target.style.borderColor=T.border;}}
                       />
 
-                      <div style={{ padding: "10px 12px", marginBottom: "14px", background: "rgba(45,255,126,0.04)", border: `1px solid ${T.green}22`, borderLeft: `3px solid ${T.green}55`, borderRadius: "8px" }}>
-                        <div style={{ fontSize: "0.73rem", color: T.muted, lineHeight: 1.65 }}>
-                          Claim reviewed by admin. Opponent has <strong style={{ color: T.text }}>24h</strong> to counter-claim. Admin resolves within <strong style={{ color: T.text }}>48h</strong>. Ambiguous claims may result in a <span style={{ color: T.red, fontWeight: 700 }}>DRAW</span>.
+                      <div style={{ padding:"10px 12px", marginBottom:"14px", background:`rgba(45,255,126,0.04)`, border:`1px solid ${T.green}22`, borderLeft:`3px solid ${T.green}55`, borderRadius:"8px" }}>
+                        <div style={{ fontSize:"0.73rem", color:T.muted, lineHeight:1.65 }}>
+                          Claim reviewed by admin. Opponent has <strong style={{color:T.text}}>24h</strong> to counter-claim. Admin resolves within <strong style={{color:T.text}}>48h</strong>. Ambiguous claims → <span style={{color:T.red,fontWeight:700}}>DRAW</span>.
                         </div>
                       </div>
 
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button onClick={() => setClaimBet(null)} style={{ padding: "11px 16px", background: "transparent", border: `1px solid ${T.border}`, borderRadius: "8px", color: T.muted, fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
-                        <button onClick={handleSubmitClaim} style={{
-                          flex: 1, padding: "11px",
-                          background: sent ? T.greenDim : proofUrl ? `linear-gradient(135deg,${T.purple},${T.purpleDim})` : T.dim,
-                          border: "none", borderRadius: "8px",
-                          color: "white", fontSize: "0.85rem", fontWeight: 800,
-                          cursor: proofUrl ? "pointer" : "not-allowed", transition: "all 0.3s",
-                        }}>
-                          {sent ? "✅ Submitted to Admin!" : "Submit Claim →"}
+                      <div style={{ display:"flex", gap:"8px" }}>
+                        <button onClick={()=>setClaimBet(null)} style={{ padding:"11px 16px", background:"transparent", border:`1px solid ${T.border}`, borderRadius:"8px", color:T.muted, fontSize:"0.8rem", fontWeight:700, cursor:"pointer" }}>Cancel</button>
+                        <button onClick={handleSubmitClaim} style={{ flex:1, padding:"11px", background:sent?T.greenDim:proofUrl?`linear-gradient(135deg,${T.purple},${T.purpleDim})`:T.dim, border:"none", borderRadius:"8px", color:"white", fontSize:"0.85rem", fontWeight:800, cursor:proofUrl?"pointer":"not-allowed", transition:"all 0.3s" }}>
+                          {sent?"✅ Submitted!":"Submit Claim →"}
                         </button>
                       </div>
                     </div>
@@ -611,7 +666,6 @@ function LiveBets({ bets, username }) {
 // ─── Leaderboard ──────────────────────────────────────────────────────────────
 function Leaderboard({ bets }) {
   const [tab, setTab] = useState("streak");
-
   const resolved = bets.filter(b => b.status === "resolved" && b.winner);
   const stats = {};
   resolved.forEach(b => {
@@ -621,69 +675,56 @@ function Leaderboard({ bets }) {
     stats[winner].wins   += 1;
     stats[winner].tokens += b.amount || 0;
   });
-  const data = Object.values(stats)
-    .sort((a, b) => tab === "streak" ? b.wins - a.wins : b.tokens - a.tokens)
-    .slice(0, 5)
-    .map((e, i) => ({ ...e, rank: i + 1 }));
-
-  const avatars      = ["🐋","👑","🦊","⚡","🎯"];
-  const podiumOrder  = [data[1], data[0], data[2]];
-  const podiumH      = [80, 100, 65];
-  const podiumColors = [T.muted, T.gold, "#cd7f32"];
-  const podiumLabels = ["2nd","1st","3rd"];
+  const data = Object.values(stats).sort((a,b) => tab==="streak"?b.wins-a.wins:b.tokens-a.tokens).slice(0,5).map((e,i) => ({...e, rank:i+1}));
+  const avatars=["🐋","👑","🦊","⚡","🎯"];
+  const podiumOrder=[data[1],data[0],data[2]];
+  const podiumH=[80,100,65];
+  const podiumColors=[T.muted,T.gold,"#cd7f32"];
+  const podiumLabels=["2nd","1st","3rd"];
 
   return (
-    <div style={{ padding: "16px" }}>
-      <div style={{ marginBottom: "16px" }}>
-        <div style={{ fontSize: "1.1rem", fontWeight: 800, color: T.text }}>Leaderboard</div>
-        <div style={{ fontSize: "0.75rem", color: T.muted, marginTop: "2px" }}>Top performers in the Freedom Betting Arena</div>
+    <div style={{ padding:"16px" }}>
+      <div style={{ marginBottom:"16px" }}>
+        <div style={{ fontSize:"1.1rem", fontWeight:800, color:T.text }}>Leaderboard</div>
+        <div style={{ fontSize:"0.75rem", color:T.muted, marginTop:"2px" }}>Top performers in the Freedom Betting Arena</div>
       </div>
-
-      <div style={{ display: "flex", background: T.card, border: `1px solid ${T.border}`, borderRadius: "10px", padding: "4px", marginBottom: "16px" }}>
-        {[{ id:"streak", l:"🔥 Win Streak"}, { id:"whale", l:"🐋 Token Whale"}].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, padding: "9px 8px", background: tab === t.id ? `linear-gradient(135deg,${T.purple},${T.purpleDim})` : "transparent", border: "none", borderRadius: "7px", color: tab === t.id ? "white" : T.muted, fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", transition: "all 0.2s" }}>{t.l}</button>
+      <div style={{ display:"flex", background:T.card, border:`1px solid ${T.border}`, borderRadius:"10px", padding:"4px", marginBottom:"16px" }}>
+        {[{id:"streak",l:"🔥 Win Streak"},{id:"whale",l:"🐋 Token Whale"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1, padding:"9px 8px", background:tab===t.id?`linear-gradient(135deg,${T.purple},${T.purpleDim})`:"transparent", border:"none", borderRadius:"7px", color:tab===t.id?"white":T.muted, fontSize:"0.75rem", fontWeight:700, cursor:"pointer", transition:"all 0.2s" }}>{t.l}</button>
         ))}
       </div>
-
-      {data.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "32px", background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", color: T.muted }}>
-          No resolved bets yet — be the first to win!
-        </div>
-      ) : (
+      {data.length===0?(
+        <div style={{ textAlign:"center", padding:"32px", background:T.card, border:`1px solid ${T.border}`, borderRadius:"12px", color:T.muted }}>No resolved bets yet — be the first to win!</div>
+      ):(
         <>
-          {/* Podium */}
-          <div style={{ display: "flex", gap: "8px", marginBottom: "12px", alignItems: "flex-end" }}>
-            {podiumOrder.map((e, i) => {
-              if (!e) return <div key={i} style={{ flex: 1 }} />;
-              return (
-                <div key={e.rank} style={{ flex: 1, textAlign: "center" }}>
-                  <div style={{ fontSize: "1.4rem", marginBottom: "4px" }}>{avatars[e.rank - 1] || "🎯"}</div>
-                  <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.text, marginBottom: "4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.name}</div>
-                  <div style={{ height: `${podiumH[i]}px`, background: `linear-gradient(180deg,${podiumColors[i]}22,${podiumColors[i]}0a)`, border: `1px solid ${podiumColors[i]}44`, borderRadius: "8px 8px 0 0", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "2px" }}>
-                    <div style={{ fontSize: "0.72rem", fontWeight: 800, color: podiumColors[i] }}>{podiumLabels[i]}</div>
-                    <div style={{ fontSize: "0.6rem", color: T.muted }}>{tab === "streak" ? `${e.wins} wins` : `${(e.tokens/1000).toFixed(0)}k`}</div>
+          <div style={{ display:"flex", gap:"8px", marginBottom:"12px", alignItems:"flex-end" }}>
+            {podiumOrder.map((e,i)=>{
+              if(!e) return <div key={i} style={{flex:1}}/>;
+              return(
+                <div key={e.rank} style={{flex:1,textAlign:"center"}}>
+                  <div style={{fontSize:"1.4rem",marginBottom:"4px"}}>{avatars[e.rank-1]||"🎯"}</div>
+                  <div style={{fontSize:"0.72rem",fontWeight:700,color:T.text,marginBottom:"4px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>@{e.name}</div>
+                  <div style={{height:`${podiumH[i]}px`,background:`linear-gradient(180deg,${podiumColors[i]}22,${podiumColors[i]}0a)`,border:`1px solid ${podiumColors[i]}44`,borderRadius:"8px 8px 0 0",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:"2px"}}>
+                    <div style={{fontSize:"0.72rem",fontWeight:800,color:podiumColors[i]}}>{podiumLabels[i]}</div>
+                    <div style={{fontSize:"0.6rem",color:T.muted}}>{tab==="streak"?`${e.wins} wins`:`${(e.tokens/1000).toFixed(0)}k`}</div>
                   </div>
                 </div>
               );
             })}
           </div>
-
-          {/* Full list */}
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden" }}>
-            {data.map((e, i) => (
-              <div key={e.name} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "13px 14px", borderBottom: i < data.length - 1 ? `1px solid ${T.border}` : "none", background: i === 0 ? "rgba(255,209,102,0.04)" : "transparent" }}>
-                <div style={{ width: "28px", textAlign: "center", fontSize: i === 0 ? "1.3rem" : "0.82rem", color: ["#ffd700","#c0c0c0","#cd7f32",T.muted,T.muted][i] }}>
-                  {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${e.rank}`}
+          <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:"12px", overflow:"hidden" }}>
+            {data.map((e,i)=>(
+              <div key={e.name} style={{ display:"flex", alignItems:"center", gap:"12px", padding:"13px 14px", borderBottom:i<data.length-1?`1px solid ${T.border}`:"none", background:i===0?"rgba(255,209,102,0.04)":"transparent" }}>
+                <div style={{ width:"28px", textAlign:"center", fontSize:i===0?"1.3rem":"0.82rem", color:["#ffd700","#c0c0c0","#cd7f32",T.muted,T.muted][i] }}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${e.rank}`}</div>
+                <div style={{fontSize:"1.3rem"}}>{avatars[i]||"🎯"}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:"0.88rem",fontWeight:700,color:i===0?T.gold:T.text}}>@{e.name}</div>
+                  {tab==="streak"&&<div style={{fontSize:"0.65rem",color:T.muted}}>{e.tokens.toLocaleString()} tokens won total</div>}
                 </div>
-                <div style={{ fontSize: "1.3rem" }}>{avatars[i] || "🎯"}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "0.88rem", fontWeight: 700, color: i === 0 ? T.gold : T.text }}>{e.name}</div>
-                  {tab === "streak" && <div style={{ fontSize: "0.65rem", color: T.muted }}>{e.tokens.toLocaleString()} tokens won total</div>}
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  {tab === "streak"
-                    ? <><div style={{ fontSize: "1.2rem", fontWeight: 800, color: T.red }}>🔥 {e.wins}</div><div style={{ fontSize: "0.6rem", color: T.muted }}>WIN STREAK</div></>
-                    : <><div style={{ fontSize: "0.9rem", fontWeight: 800, color: T.gold }}>{e.tokens.toLocaleString()}</div><div style={{ fontSize: "0.6rem", color: T.muted }}>$FREE WON</div></>
+                <div style={{textAlign:"right"}}>
+                  {tab==="streak"
+                    ?<><div style={{fontSize:"1.2rem",fontWeight:800,color:T.red}}>🔥 {e.wins}</div><div style={{fontSize:"0.6rem",color:T.muted}}>WIN STREAK</div></>
+                    :<><div style={{fontSize:"0.9rem",fontWeight:800,color:T.gold}}>{e.tokens.toLocaleString()}</div><div style={{fontSize:"0.6rem",color:T.muted}}>$FREE WON</div></>
                   }
                 </div>
               </div>
@@ -697,125 +738,105 @@ function Leaderboard({ bets }) {
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 function PlayerSide({ name, side, amount }) {
-  const color = side === "YES" ? T.green : T.red;
-  return (
-    <div style={{ flex: 1, background: T.surface, border: `1px solid ${color}44`, borderRadius: "8px", padding: "10px", textAlign: "center" }}>
-      <div style={{ fontSize: "0.72rem", color: T.muted, marginBottom: "3px" }}>{name}</div>
-      <div style={{ fontSize: "1rem", fontWeight: 800, color }}>{side}</div>
-      <div style={{ fontSize: "0.65rem", color: T.gold, marginTop: "2px" }}>{(amount || 0).toLocaleString()} $FREE</div>
+  const color = side==="YES"?T.green:T.red;
+  return(
+    <div style={{flex:1,background:T.surface,border:`1px solid ${color}44`,borderRadius:"8px",padding:"10px",textAlign:"center"}}>
+      <div style={{fontSize:"0.72rem",color:T.muted,marginBottom:"3px"}}>@{name}</div>
+      <div style={{fontSize:"1rem",fontWeight:800,color}}>{side}</div>
+      <div style={{fontSize:"0.65rem",color:T.gold,marginTop:"2px"}}>{(amount||0).toLocaleString()} $FREE</div>
     </div>
   );
 }
 
 function AdminPanel({ bets }) {
-  const [pin, setPin]         = useState("");
-  const [ok, setOk]           = useState(false);
-  const [err, setErr]         = useState(false);
-  const [verdict, setVerdict] = useState({});
-  const [confirmed, setConf]  = useState({});
+  const [pin,setPin]         = useState("");
+  const [ok,setOk]           = useState(false);
+  const [err,setErr]         = useState(false);
+  const [verdict,setVerdict] = useState({});
+  const [confirmed,setConf]  = useState({});
+  const pending  = bets.filter(b=>b.status==="pending_claim");
+  const resolved = bets.filter(b=>["resolved","draw"].includes(b.status));
 
-  const pending  = bets.filter(b => b.status === "pending_claim");
-  const resolved = bets.filter(b => ["resolved","draw"].includes(b.status));
-
-  const handleUnlock = () => {
-    if (pin === "1234") { setOk(true); setErr(false); }
-    else { setErr(true); setPin(""); }
+  const handleUnlock=()=>{if(pin==="1234"){setOk(true);setErr(false);}else{setErr(true);setPin("");}};
+  const handleResolve=async(bet)=>{
+    const v=verdict[bet.id]; if(!v) return;
+    await updateDoc(doc(db,"bets",bet.id),{status:v==="DRAW"?"draw":"resolved",winner:v==="DRAW"?null:v});
+    setConf(p=>({...p,[bet.id]:v}));
   };
 
-  const handleResolve = async (bet) => {
-    const v = verdict[bet.id];
-    if (!v) return;
-    await updateDoc(doc(db, "bets", bet.id), {
-      status: v === "DRAW" ? "draw" : "resolved",
-      winner: v === "DRAW" ? null : v,
-    });
-    setConf(prev => ({ ...prev, [bet.id]: v }));
-  };
-
-  if (!ok) return (
-    <div style={{ padding: "52px 24px", textAlign: "center" }}>
-      <Logo size={58} />
-      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: T.text, marginTop: "14px" }}>Admin Panel</div>
-      <div style={{ fontSize: "0.78rem", color: T.muted, marginBottom: "28px", marginTop: "4px" }}>Enter your PIN to access the admin panel</div>
-      <input
-        type="password"
-        value={pin}
-        onChange={e => { setPin(e.target.value); setErr(false); }}
-        onKeyDown={e => e.key === "Enter" && handleUnlock()}
-        placeholder="••••"
-        style={{ width: "160px", padding: "14px", display: "block", margin: "0 auto 10px", background: T.card, border: `2px solid ${err ? T.red : T.border}`, borderRadius: "10px", color: T.text, fontSize: "1.5rem", textAlign: "center", letterSpacing: "0.4em", outline: "none", fontFamily: "inherit", transition: "border-color 0.2s" }}
+  if(!ok) return(
+    <div style={{padding:"52px 24px",textAlign:"center"}}>
+      <Logo size={58}/>
+      <div style={{fontSize:"1.3rem",fontWeight:800,color:T.text,marginTop:"14px"}}>Admin Panel</div>
+      <div style={{fontSize:"0.78rem",color:T.muted,marginBottom:"28px",marginTop:"4px"}}>Enter your PIN to access</div>
+      <input type="password" value={pin} onChange={e=>{setPin(e.target.value);setErr(false);}} onKeyDown={e=>e.key==="Enter"&&handleUnlock()} placeholder="••••"
+        style={{width:"160px",padding:"14px",display:"block",margin:"0 auto 10px",background:T.card,border:`2px solid ${err?T.red:T.border}`,borderRadius:"10px",color:T.text,fontSize:"1.5rem",textAlign:"center",letterSpacing:"0.4em",outline:"none",fontFamily:"inherit",transition:"border-color 0.2s"}}
       />
-      {err && <div style={{ fontSize: "0.78rem", color: T.red, fontWeight: 600, marginBottom: "12px" }}>❌ Incorrect PIN</div>}
-      <button onClick={handleUnlock} style={{ padding: "13px 36px", background: `linear-gradient(135deg,${T.purple},${T.purpleDim})`, border: "none", borderRadius: "10px", color: "white", fontSize: "0.95rem", fontWeight: 800, cursor: "pointer", boxShadow: `0 4px 16px ${T.purple}44` }}>
+      {err&&<div style={{fontSize:"0.78rem",color:T.red,fontWeight:600,marginBottom:"12px"}}>❌ Incorrect PIN</div>}
+      <button onClick={handleUnlock} style={{padding:"13px 36px",background:`linear-gradient(135deg,${T.purple},${T.purpleDim})`,border:"none",borderRadius:"10px",color:"white",fontSize:"0.95rem",fontWeight:800,cursor:"pointer",boxShadow:`0 4px 16px ${T.purple}44`}}>
         Unlock Admin →
       </button>
     </div>
   );
 
-  return (
-    <div style={{ padding: "16px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+  return(
+    <div style={{padding:"16px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"16px"}}>
         <div>
-          <div style={{ fontSize: "1.1rem", fontWeight: 800, color: T.text }}>Claim Review</div>
-          <div style={{ fontSize: "0.73rem", color: T.muted, marginTop: "2px" }}>Review player claims and declare results</div>
+          <div style={{fontSize:"1.1rem",fontWeight:800,color:T.text}}>Claim Review</div>
+          <div style={{fontSize:"0.73rem",color:T.muted,marginTop:"2px"}}>Review claims and declare results</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(45,255,126,0.08)", border: `1px solid ${T.green}33`, borderRadius: "20px", padding: "5px 10px" }}>
-          <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: T.green, animation: "pulse 1.5s infinite", flexShrink: 0 }} />
-          <span style={{ fontSize: "0.65rem", fontWeight: 700, color: T.green }}>ADMIN</span>
+        <div style={{display:"flex",alignItems:"center",gap:"6px",background:"rgba(45,255,126,0.08)",border:`1px solid ${T.green}33`,borderRadius:"20px",padding:"5px 10px"}}>
+          <span style={{width:"6px",height:"6px",borderRadius:"50%",background:T.green,animation:"pulse 1.5s infinite",flexShrink:0}}/>
+          <span style={{fontSize:"0.65rem",fontWeight:700,color:T.green}}>ADMIN</span>
         </div>
       </div>
 
-      {pending.length === 0 && (
-        <div style={{ textAlign: "center", padding: "32px", background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", color: T.muted, marginBottom: "16px" }}>
+      {pending.length===0&&(
+        <div style={{textAlign:"center",padding:"32px",background:T.card,border:`1px solid ${T.border}`,borderRadius:"12px",color:T.muted,marginBottom:"16px"}}>
           ✅ No pending claims to review
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        {pending.map(bet => {
-          const isDone = !!confirmed[bet.id];
-          return (
-            <div key={bet.id} style={{ background: T.card, border: `1px solid ${isDone ? T.border : T.purple + "55"}`, borderTop: `3px solid ${isDone ? T.border : T.purple}`, borderRadius: "12px", overflow: "hidden", opacity: isDone ? 0.5 : 1, transition: "opacity 0.4s" }}>
-              <div style={{ padding: "14px" }}>
-                <div style={{ fontSize: "0.9rem", fontWeight: 600, color: T.text, lineHeight: 1.5, marginBottom: "12px" }}>{bet.desc}</div>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "12px" }}>
-                  <PlayerSide name={bet.creator}          side={bet.side}                          amount={bet.amount} />
-                  <div style={{ fontSize: "0.75rem", fontWeight: 800, color: T.dim }}>VS</div>
-                  <PlayerSide name={bet.opponent || "???"} side={bet.side === "YES" ? "NO" : "YES"} amount={bet.amount} />
+      <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
+        {pending.map(bet=>{
+          const isDone=!!confirmed[bet.id];
+          return(
+            <div key={bet.id} style={{background:T.card,border:`1px solid ${isDone?T.border:T.purple+"55"}`,borderTop:`3px solid ${isDone?T.border:T.purple}`,borderRadius:"12px",overflow:"hidden",opacity:isDone?0.5:1,transition:"opacity 0.4s"}}>
+              <div style={{padding:"14px"}}>
+                <div style={{fontSize:"0.9rem",fontWeight:600,color:T.text,lineHeight:1.5,marginBottom:"12px"}}>{bet.desc}</div>
+                <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"12px"}}>
+                  <PlayerSide name={bet.creator} side={bet.side} amount={bet.amount}/>
+                  <div style={{fontSize:"0.75rem",fontWeight:800,color:T.dim}}>VS</div>
+                  <PlayerSide name={bet.opponent||"???"} side={bet.side==="YES"?"NO":"YES"} amount={bet.amount}/>
                 </div>
-                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${T.purple}`, borderRadius: "8px", padding: "12px", marginBottom: "12px" }}>
-                  <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.text, marginBottom: "8px" }}>
-                    Claim by <span style={{ color: T.purple }}>{bet.claimedBy}</span> — claims <span style={{ color: bet.claimedSide === "YES" ? T.green : T.red, fontWeight: 800 }}>{bet.claimedSide}</span> wins
+                <div style={{background:T.surface,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T.purple}`,borderRadius:"8px",padding:"12px",marginBottom:"12px"}}>
+                  <div style={{fontSize:"0.72rem",fontWeight:700,color:T.text,marginBottom:"8px"}}>
+                    Claim by <span style={{color:T.purple}}>@{bet.claimedBy}</span> — claims <span style={{color:bet.claimedSide==="YES"?T.green:T.red,fontWeight:800}}>{bet.claimedSide}</span> wins
                   </div>
-                  <div style={{ fontSize: "0.68rem", fontWeight: 600, color: T.muted, marginBottom: "5px", textTransform: "uppercase", letterSpacing: "0.06em" }}>🔗 Proof Link — Tap to Verify:</div>
-                  <a href={bet.proofUrl} target="_blank" rel="noreferrer" style={{ display: "block", padding: "9px 11px", background: T.card, border: "1px solid rgba(79,195,247,0.3)", borderRadius: "6px", color: "#4fc3f7", fontSize: "0.75rem", textDecoration: "none", wordBreak: "break-all", lineHeight: 1.45, marginBottom: "8px", fontWeight: 500 }}>
+                  <div style={{fontSize:"0.68rem",fontWeight:600,color:T.muted,marginBottom:"5px",textTransform:"uppercase",letterSpacing:"0.06em"}}>🔗 Proof Link — Tap to Verify:</div>
+                  <a href={bet.proofUrl} target="_blank" rel="noreferrer" style={{display:"block",padding:"9px 11px",background:T.card,border:"1px solid rgba(79,195,247,0.3)",borderRadius:"6px",color:"#4fc3f7",fontSize:"0.75rem",textDecoration:"none",wordBreak:"break-all",lineHeight:1.45,marginBottom:"8px",fontWeight:500}}>
                     🌐 {bet.proofUrl}
                   </a>
-                  {bet.proofNote && (
-                    <div style={{ fontSize: "0.75rem", color: T.muted, fontStyle: "italic", lineHeight: 1.5, padding: "8px 10px", background: T.card, borderRadius: "6px" }}>"{bet.proofNote}"</div>
-                  )}
+                  {bet.proofNote&&<div style={{fontSize:"0.75rem",color:T.muted,fontStyle:"italic",lineHeight:1.5,padding:"8px 10px",background:T.card,borderRadius:"6px"}}>"{bet.proofNote}"</div>}
                 </div>
-                {!isDone ? (
+                {!isDone?(
                   <>
-                    <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>Your Verdict</div>
-                    <div style={{ display: "flex", gap: "6px", marginBottom: "12px" }}>
-                      {[
-                        { v: "YES",  label: "YES Wins", icon: "✅", color: T.green,  bg: "rgba(45,255,126,0.08)"  },
-                        { v: "NO",   label: "NO Wins",  icon: "❌", color: T.red,    bg: "rgba(255,77,106,0.08)"  },
-                        { v: "DRAW", label: "Draw",     icon: "🤝", color: T.muted,  bg: "rgba(122,128,160,0.08)" },
-                      ].map(opt => (
-                        <button key={opt.v} onClick={() => setVerdict(p => ({ ...p, [bet.id]: opt.v }))} style={{ flex: 1, padding: "10px 4px", background: verdict[bet.id] === opt.v ? opt.bg : T.surface, border: `2px solid ${verdict[bet.id] === opt.v ? opt.color : T.border}`, borderRadius: "8px", color: verdict[bet.id] === opt.v ? opt.color : T.muted, fontSize: "0.7rem", fontWeight: 700, cursor: "pointer", transition: "all 0.18s" }}>
-                          <div style={{ fontSize: "1.1rem", marginBottom: "3px" }}>{opt.icon}</div>{opt.label}
+                    <div style={{fontSize:"0.72rem",fontWeight:700,color:T.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:"8px"}}>Your Verdict</div>
+                    <div style={{display:"flex",gap:"6px",marginBottom:"12px"}}>
+                      {[{v:"YES",label:"YES Wins",icon:"✅",color:T.green,bg:"rgba(45,255,126,0.08)"},{v:"NO",label:"NO Wins",icon:"❌",color:T.red,bg:"rgba(255,77,106,0.08)"},{v:"DRAW",label:"Draw",icon:"🤝",color:T.muted,bg:"rgba(122,128,160,0.08)"}].map(opt=>(
+                        <button key={opt.v} onClick={()=>setVerdict(p=>({...p,[bet.id]:opt.v}))} style={{flex:1,padding:"10px 4px",background:verdict[bet.id]===opt.v?opt.bg:T.surface,border:`2px solid ${verdict[bet.id]===opt.v?opt.color:T.border}`,borderRadius:"8px",color:verdict[bet.id]===opt.v?opt.color:T.muted,fontSize:"0.7rem",fontWeight:700,cursor:"pointer",transition:"all 0.18s"}}>
+                          <div style={{fontSize:"1.1rem",marginBottom:"3px"}}>{opt.icon}</div>{opt.label}
                         </button>
                       ))}
                     </div>
-                    <button onClick={() => handleResolve(bet)} disabled={!verdict[bet.id]} style={{ width: "100%", padding: "14px", background: verdict[bet.id] ? `linear-gradient(135deg,${T.purple},${T.purpleDim})` : T.dim, border: "none", borderRadius: "10px", color: verdict[bet.id] ? "white" : T.muted, fontSize: "0.9rem", fontWeight: 800, cursor: verdict[bet.id] ? "pointer" : "not-allowed", transition: "all 0.2s", boxShadow: verdict[bet.id] ? `0 4px 16px ${T.purple}44` : "none" }}>
-                      {verdict[bet.id] ? `⚡ Confirm — ${verdict[bet.id] === "DRAW" ? "Declare Draw" : `${verdict[bet.id]} Wins · Release Funds`}` : "Select a verdict first"}
+                    <button onClick={()=>handleResolve(bet)} disabled={!verdict[bet.id]} style={{width:"100%",padding:"14px",background:verdict[bet.id]?`linear-gradient(135deg,${T.purple},${T.purpleDim})`:T.dim,border:"none",borderRadius:"10px",color:verdict[bet.id]?"white":T.muted,fontSize:"0.9rem",fontWeight:800,cursor:verdict[bet.id]?"pointer":"not-allowed",transition:"all 0.2s",boxShadow:verdict[bet.id]?`0 4px 16px ${T.purple}44`:"none"}}>
+                      {verdict[bet.id]?`⚡ Confirm — ${verdict[bet.id]==="DRAW"?"Declare Draw":`${verdict[bet.id]} Wins · Release Funds`}`:"Select a verdict first"}
                     </button>
                   </>
-                ) : (
-                  <div style={{ padding: "14px", textAlign: "center", background: confirmed[bet.id] === "DRAW" ? "rgba(122,128,160,0.08)" : confirmed[bet.id] === "YES" ? "rgba(45,255,126,0.08)" : "rgba(255,77,106,0.08)", border: `1px solid ${confirmed[bet.id] === "DRAW" ? T.muted : confirmed[bet.id] === "YES" ? T.green : T.red}44`, borderRadius: "10px", color: confirmed[bet.id] === "DRAW" ? T.muted : confirmed[bet.id] === "YES" ? T.green : T.red, fontSize: "0.88rem", fontWeight: 700 }}>
-                    {confirmed[bet.id] === "DRAW" ? "🤝 Draw Declared — Tokens Returned" : `✅ ${confirmed[bet.id]} Wins — Funds Released`}
+                ):(
+                  <div style={{padding:"14px",textAlign:"center",background:confirmed[bet.id]==="DRAW"?"rgba(122,128,160,0.08)":confirmed[bet.id]==="YES"?"rgba(45,255,126,0.08)":"rgba(255,77,106,0.08)",border:`1px solid ${confirmed[bet.id]==="DRAW"?T.muted:confirmed[bet.id]==="YES"?T.green:T.red}44`,borderRadius:"10px",color:confirmed[bet.id]==="DRAW"?T.muted:confirmed[bet.id]==="YES"?T.green:T.red,fontSize:"0.88rem",fontWeight:700}}>
+                    {confirmed[bet.id]==="DRAW"?"🤝 Draw Declared — Tokens Returned":`✅ ${confirmed[bet.id]} Wins — Funds Released`}
                   </div>
                 )}
               </div>
@@ -824,21 +845,21 @@ function AdminPanel({ bets }) {
         })}
       </div>
 
-      {resolved.length > 0 && (
-        <div style={{ marginTop: "20px" }}>
-          <div style={{ fontSize: "0.85rem", fontWeight: 800, color: T.text, marginBottom: "10px" }}>Resolved History</div>
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", overflow: "hidden" }}>
-            {resolved.map((b, i) => (
-              <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", borderBottom: i < resolved.length - 1 ? `1px solid ${T.border}` : "none" }}>
-                <div style={{ fontSize: "0.8rem", color: T.muted, flex: 1, marginRight: "10px", lineHeight: 1.45 }}>{b.desc}</div>
-                <Pill status={b.status} />
+      {resolved.length>0&&(
+        <div style={{marginTop:"20px"}}>
+          <div style={{fontSize:"0.85rem",fontWeight:800,color:T.text,marginBottom:"10px"}}>Resolved History</div>
+          <div style={{background:T.card,border:`1px solid ${T.border}`,borderRadius:"12px",overflow:"hidden"}}>
+            {resolved.map((b,i)=>(
+              <div key={b.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderBottom:i<resolved.length-1?`1px solid ${T.border}`:"none"}}>
+                <div style={{fontSize:"0.8rem",color:T.muted,flex:1,marginRight:"10px",lineHeight:1.45}}>{b.desc}</div>
+                <Pill status={b.status}/>
               </div>
             ))}
           </div>
         </div>
       )}
-      <div style={{ marginTop: "24px", textAlign: "center", paddingBottom: "8px" }}>
-        <div style={{ fontSize: "0.6rem", color: T.dim, letterSpacing: "0.1em" }}>DEGENSAFE.FUN · PROJECT FREEDOM · @DGNPROJECT</div>
+      <div style={{marginTop:"24px",textAlign:"center",paddingBottom:"8px"}}>
+        <div style={{fontSize:"0.6rem",color:T.dim,letterSpacing:"0.1em"}}>DEGENSAFE.FUN · PROJECT FREEDOM · @DGNPROJECT</div>
       </div>
     </div>
   );
@@ -849,7 +870,7 @@ export default function App() {
   const [tab, setTab]         = useState("bet");
   const [bets, setBets]       = useState([]);
   const [loading, setLoading] = useState(true);
-  const [username]            = useState("Player_" + Math.random().toString(36).slice(2, 6).toUpperCase());
+  const [username, setUsername] = useState(() => localStorage.getItem("fb_username") || "");
 
   useEffect(() => {
     const q = query(collection(db, "bets"), orderBy("createdAt", "desc"));
@@ -876,21 +897,31 @@ export default function App() {
     return () => document.head.removeChild(style);
   }, []);
 
+  // Show onboarding if no username
+  if (!username) {
+    return <Onboarding onEnter={name => setUsername(name)} />;
+  }
+
   const liveBets = bets.filter(b => ["open","active","pending_claim"].includes(b.status)).length;
 
   if (loading) return (
-    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "16px" }}>
+    <div style={{ minHeight:"100vh", background:T.bg, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:"16px" }}>
       <Logo size={60} />
-      <div style={{ color: T.muted, fontSize: "0.9rem", fontFamily: "sans-serif" }}>Loading Freedom Bets...</div>
+      <div style={{ color:T.muted, fontSize:"0.9rem", fontFamily:"sans-serif" }}>Loading Freedom Bets...</div>
     </div>
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text, maxWidth: "430px", margin: "0 auto", fontFamily: "'Outfit',sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:T.bg, color:T.text, maxWidth:"430px", margin:"0 auto", fontFamily:"'Outfit',sans-serif" }}>
       <Ticker />
-      <Header tab={tab} setTab={setTab} liveBets={liveBets} />
+      <Header
+        tab={tab} setTab={setTab}
+        liveBets={liveBets}
+        username={username}
+        onLogout={() => { localStorage.removeItem("fb_username"); setUsername(""); }}
+      />
       <StatsBar bets={bets} />
-      <div style={{ paddingBottom: "24px" }}>
+      <div style={{ paddingBottom:"24px" }}>
         {tab === "bet"   && <BetForm username={username} />}
         {tab === "live"  && <LiveBets bets={bets} username={username} />}
         {tab === "board" && <Leaderboard bets={bets} />}

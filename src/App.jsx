@@ -302,19 +302,24 @@ function SectionHeader({ title, count }) {
 
 // ─── Place Bet ────────────────────────────────────────────────────────────────
 function BetForm({ username }) {
-  const [desc, setDesc]       = useState("");
-  const [amount, setAmount]   = useState(500);
-  const [side, setSide]       = useState("YES");
-  const [done, setDone]       = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [desc, setDesc]         = useState("");
+  const [amount, setAmount]     = useState(500);
+  const [customMode, setCustomMode] = useState(false);
+  const [customVal, setCustomVal]   = useState("");
+  const [side, setSide]         = useState("YES");
+  const [done, setDone]         = useState(false);
+  const [loading, setLoading]   = useState(false);
+
+  const effectiveAmount = customMode ? (parseInt(customVal) || 0) : amount;
+  const amountValid = effectiveAmount >= 1;
 
   const handleSubmit = async () => {
-    if (!desc.trim()) return;
+    if (!desc.trim() || !amountValid) return;
     setLoading(true);
     try {
       await addDoc(collection(db, "bets"), {
         desc:        desc.trim(),
-        amount:      amount,
+        amount:      effectiveAmount,
         side:        side,
         creator:     username,
         opponent:    null,
@@ -383,20 +388,78 @@ function BetForm({ username }) {
           <span>💎</span>
           <span style={{ fontSize: "0.78rem", fontWeight: 700, color: T.text }}>Stake Amount</span>
         </div>
-        <div style={{ padding: "14px", display: "flex", gap: "8px" }}>
-          {AMOUNTS.map(a => (
-            <button key={a} onClick={() => setAmount(a)} style={{
-              flex: 1, padding: "14px 0",
-              background: amount === a ? "rgba(45,255,126,0.1)" : T.surface,
-              border: `2px solid ${amount === a ? T.green : T.border}`,
-              borderRadius: "10px", color: amount === a ? T.green : T.muted,
-              fontSize: "1.05rem", fontWeight: 800,
+        <div style={{ padding: "14px" }}>
+          {/* Preset buttons */}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+            {AMOUNTS.map(a => (
+              <button key={a} onClick={() => { setAmount(a); setCustomMode(false); setCustomVal(""); }} style={{
+                flex: 1, padding: "13px 0",
+                background: !customMode && amount === a ? "rgba(45,255,126,0.1)" : T.surface,
+                border: `2px solid ${!customMode && amount === a ? T.green : T.border}`,
+                borderRadius: "10px",
+                color: !customMode && amount === a ? T.green : T.muted,
+                fontSize: "1.05rem", fontWeight: 800,
+                cursor: "pointer", transition: "all 0.18s",
+              }}>
+                {a.toLocaleString()}
+                <div style={{ fontSize: "0.58rem", fontWeight: 600, marginTop: "2px", opacity: 0.7 }}>$FREE</div>
+              </button>
+            ))}
+            {/* Custom button */}
+            <button onClick={() => { setCustomMode(true); setCustomVal(""); }} style={{
+              flex: 1, padding: "13px 0",
+              background: customMode ? "rgba(196,78,255,0.1)" : T.surface,
+              border: `2px solid ${customMode ? T.purple : T.border}`,
+              borderRadius: "10px",
+              color: customMode ? T.purple : T.muted,
+              fontSize: "0.72rem", fontWeight: 800,
               cursor: "pointer", transition: "all 0.18s",
             }}>
-              {a.toLocaleString()}
-              <div style={{ fontSize: "0.58rem", fontWeight: 600, marginTop: "2px", opacity: 0.7 }}>$FREE</div>
+              ✏️
+              <div style={{ fontSize: "0.58rem", fontWeight: 600, marginTop: "2px", opacity: 0.8 }}>Custom</div>
             </button>
-          ))}
+          </div>
+
+          {/* Custom input — shown when custom mode active */}
+          {customMode && (
+            <div style={{ position: "relative" }}>
+              <input
+                type="number"
+                value={customVal}
+                onChange={e => {
+                  const v = e.target.value.replace(/[^0-9]/g, "");
+                  setCustomVal(v);
+                }}
+                placeholder="Enter amount..."
+                min={1}
+                style={{
+                  width: "100%", padding: "12px 60px 12px 14px",
+                  background: T.surface,
+                  border: `2px solid ${customVal && parseInt(customVal) >= 1 ? T.purple : T.border}`,
+                  borderRadius: "10px", color: T.text,
+                  fontSize: "1.05rem", fontWeight: 700,
+                  outline: "none", boxSizing: "border-box",
+                  fontFamily: "inherit",
+                  transition: "border-color 0.2s",
+                }}
+                onFocus={e => { e.target.style.borderColor = T.purple; }}
+                onBlur={e => { e.target.style.borderColor = customVal && parseInt(customVal) >= 1 ? T.purple : T.border; }}
+                autoFocus
+              />
+              <span style={{
+                position: "absolute", right: "14px", top: "50%",
+                transform: "translateY(-50%)",
+                fontSize: "0.72rem", fontWeight: 700, color: T.purple,
+              }}>$FREE</span>
+            </div>
+          )}
+
+          {/* Min amount warning */}
+          {customMode && customVal && parseInt(customVal) < 1 && (
+            <div style={{ marginTop: "6px", fontSize: "0.72rem", color: T.red, fontWeight: 600 }}>
+              ❌ Minimum amount is 1 $FREE
+            </div>
+          )}
         </div>
       </div>
 
@@ -430,10 +493,10 @@ function BetForm({ username }) {
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
         <div style={{ fontSize: "0.72rem", fontWeight: 700, color: T.muted, marginBottom: "10px", textTransform: "uppercase", letterSpacing: "0.06em" }}>Bet Summary</div>
         {[
-          ["Your stake",       `${amount.toLocaleString()} $FREE`,        T.text  ],
-          ["Potential return", `${(amount*1.9).toLocaleString()} $FREE`,  T.green ],
-          ["Platform fee",     "5%",                                        T.muted ],
-          ["Net profit",       `+${(amount*0.9).toLocaleString()} $FREE`, T.green ],
+          ["Your stake",       `${effectiveAmount.toLocaleString()} $FREE`,        T.text  ],
+          ["Potential return", `${(effectiveAmount*1.9).toLocaleString()} $FREE`,  T.green ],
+          ["Platform fee",     "5%",                                                T.muted ],
+          ["Net profit",       `+${(effectiveAmount*0.9).toLocaleString()} $FREE`, T.green ],
         ].map(([k, v, c]) => (
           <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>
             <span style={{ fontSize: "0.78rem", color: T.muted }}>{k}</span>
@@ -442,16 +505,16 @@ function BetForm({ username }) {
         ))}
       </div>
 
-      <button onClick={handleSubmit} disabled={loading || !desc.trim()} style={{
+      <button onClick={handleSubmit} disabled={loading || !desc.trim() || !amountValid} style={{
         width: "100%", padding: "16px",
-        background: done ? T.greenDim : !desc.trim() ? T.dim : `linear-gradient(135deg,${T.purple},${T.purpleDim})`,
+        background: done ? T.greenDim : (!desc.trim() || !amountValid) ? T.dim : `linear-gradient(135deg,${T.purple},${T.purpleDim})`,
         border: "none", borderRadius: "12px",
         color: "white", fontSize: "1rem", fontWeight: 800,
-        cursor: desc.trim() ? "pointer" : "not-allowed",
+        cursor: (desc.trim() && amountValid) ? "pointer" : "not-allowed",
         transition: "all 0.3s",
         boxShadow: done ? `0 4px 20px ${T.green}44` : `0 4px 20px ${T.purple}44`,
       }}>
-        {done ? "✅  Bet Placed!" : loading ? "Saving..." : `Lock ${amount.toLocaleString()} $FREE · Predict ${side}`}
+        {done ? "✅  Bet Placed!" : loading ? "Saving..." : `Lock ${effectiveAmount.toLocaleString()} $FREE · Predict ${side}`}
       </button>
       <div style={{ textAlign: "center", marginTop: "8px", fontSize: "0.68rem", color: T.dim }}>
         🔐 Signed via Phantom Wallet · Solana blockchain

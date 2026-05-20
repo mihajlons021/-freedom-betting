@@ -830,7 +830,7 @@ function AdminPanel({ bets }) {
   const pending  = bets.filter(b=>b.status==="pending_claim");
   const resolved = bets.filter(b=>["resolved","draw"].includes(b.status));
 
-  const unlock=()=>{if(pin==="1234"){setOk(true);setErr(false);}else{setErr(true);setPin("");}};
+  const unlock=()=>{if(pin==="752928"){setOk(true);setErr(false);}else{setErr(true);setPin("");}};
 
   const handleResolve = async (bet) => {
     const v = verdict[bet.id]; if (!v) return;

@@ -43,6 +43,8 @@ async function connectPhantom() {
 
 // Real SPL token transfer — dynamic ESM import (same as Battleship)
 async function sendDepositToEscrow(amount, walletAddress, setStatus) {
+  // DEPOSITS_PAUSED (2026-11-06): escrow wallet compromised, do not take deposits.
+  setStatus("Deposits are temporarily paused for maintenance. No tokens were sent. Please try again later."); return { ok: false, err: "Deposits paused" };
   if (!walletAddress) { setStatus("Connect wallet first!"); return { ok: false }; }
   try {
     setStatus("Loading Solana...");
@@ -157,7 +159,7 @@ function DepositOverlay({ amount, status, onAbort }) {
       {/* Escrow address */}
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: "8px", padding: "10px 14px", marginBottom: "20px", maxWidth: "340px", width: "100%" }}>
         <div style={{ fontSize: "0.62rem", color: T.muted, marginBottom: "4px", letterSpacing: "0.1em" }}>ESCROW ADDRESS</div>
-        <div style={{ fontSize: "0.7rem", color: T.green, fontFamily: "monospace", wordBreak: "break-all" }}>{ESCROW}</div>
+        <div style={{ fontSize: "0.7rem", color: T.green, fontFamily: "monospace", wordBreak: "break-all" }}>Deposits paused for maintenance</div>
       </div>
 
       {/* Status */}

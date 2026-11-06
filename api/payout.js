@@ -9,6 +9,10 @@ const PRIORITY_FEE  = 500000;
 const PLATFORM_FEE  = 0.05; // 5%
 
 export default async function handler(req, res) {
+  // PAYOUTS_DISABLED (2026-11-06): emergency lock. The old auth could be bypassed by anyone,
+  // so no payout is sent until a server-verified payout flow replaces this.
+  return res.status(503).json({ error: "Payouts are temporarily disabled" });
+
   // Only POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
